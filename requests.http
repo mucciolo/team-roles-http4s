@@ -1,0 +1,7 @@
+### create new role
+POST http://localhost:8080/teams/roles
+Content-Type: application/json
+
+{
+  "name": "Testeee"
+}
