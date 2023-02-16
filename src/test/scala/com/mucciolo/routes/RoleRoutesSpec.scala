@@ -3,177 +3,191 @@ package com.mucciolo.routes
 import cats.data.Validated._
 import cats.data._
 import cats.effect.IO
-import cats.effect.unsafe.implicits.global
+import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.implicits.catsSyntaxEitherId
 import com.mucciolo.repository._
 import com.mucciolo.service.RoleService
 import com.mucciolo.util.Validator
-import org.http4s.Method.POST
+import org.http4s.Method.{GET, POST, PUT}
 import org.http4s.circe.CirceEntityCodec.{circeEntityDecoder, circeEntityEncoder}
 import org.http4s.implicits._
 import org.http4s.{HttpRoutes, Request, Response, Status}
-import org.scalamock.scalatest.MockFactory
-import org.scalatest.freespec.AnyFreeSpec
+import org.scalamock.scalatest.AsyncMockFactory
+import org.scalatest.freespec.AsyncFreeSpec
 import org.scalatest.matchers.should.Matchers
 
 import java.util.UUID
 
-class RoleRoutesSpec extends AnyFreeSpec with MockFactory with Matchers {
+final class RoleRoutesSpec extends AsyncFreeSpec with AsyncIOSpec with AsyncMockFactory
+  with Matchers {
 
   private val service = stub[RoleService]
+  private val defaultRoutes: HttpRoutes[IO] = RoleRoutes(service)
+  private val teamId = UUID.fromString("dcb537df-3ac9-40cb-adcb-b15f652f18f7")
+  private val userId = UUID.fromString("3a05f9ce-3873-4de4-a8ce-6a15e84158cc")
+  private val roleId = UUID.fromString("ff80826c-41de-4462-92cf-5967d0f3324f")
 
-  private def send(routes: HttpRoutes[IO])(request: Request[IO]): Response[IO] = {
-    routes.orNotFound(request).unsafeRunSync()
+  private def send(routes: HttpRoutes[IO])(request: Request[IO]): IO[Response[IO]] = {
+    routes.orNotFound(request)
   }
 
   "Role creation" - {
 
-    "should return 201 with newly created object given valid role" in {
+    "should return 201 with newly created object given valid request" in {
 
-      val routes = RoleRoutes(service)
-      val roleToBeCreated = RoleInsert("New Role")
+      val roleName = "New Role"
+      val role = RoleCreationRequest(Some(roleName))
       val expectedCreatedRole = Role(
         id = UUID.fromString("b93558f5-0ac8-47f8-8cf0-7b131364d464"),
-        name = roleToBeCreated.name
+        name = roleName
       )
-      val serviceCreateReturn = EitherT(IO.pure(expectedCreatedRole.asRight[String]))
 
-      (service.create _).when(roleToBeCreated).returns(serviceCreateReturn)
+      service.create _ when roleName returns EitherT.rightT(expectedCreatedRole)
 
-      val request = Request[IO](POST, uri"/teams/roles").withEntity(roleToBeCreated)
-      val response = send(routes)(request)
+      val request = roleCreationRequest(role)
+      val response = send(defaultRoutes)(request)
 
-      response.status shouldBe Status.Created
-      response.as[Role].unsafeRunSync() shouldBe expectedCreatedRole
-
+      response.flatMap { res =>
+        res.status shouldBe Status.Created
+        res.as[Role].asserting(_ shouldBe expectedCreatedRole)
+      }
     }
 
-    "should return 400 with a list of errors given invalid role" in {
+    "should return 400 with errors" - {
 
-      val invalidRole = RoleInsert("Invalid")
-      val roleValidator: Validator[RoleInsert] =
-        role => condNec(role.name != invalidRole.name, role, "Invalid role name")
-      val routes = RoleRoutes(service, roleValidator)
+      "given invalid request" in {
 
-      val request = Request[IO](POST, uri"/teams/roles").withEntity(invalidRole)
-      val response = send(routes)(request)
-      val expectedError = Error("Invalid role name")
+        val invalidRole = RoleCreationRequest(name = None)
+        val invalidator: Validator[RoleCreationRequest] = _ => invalidNec("Invalid role name")
+        val routes = RoleRoutes(service, invalidator)
 
-      response.status shouldBe Status.BadRequest
-      response.as[Error].unsafeRunSync() shouldBe expectedError
+        val request = roleCreationRequest(invalidRole)
+        val response = send(routes)(request)
+        val expectedError = Error("Invalid role name")
 
+        response.flatMap { res =>
+          res.status shouldBe Status.BadRequest
+          res.as[Error].asserting(_ shouldBe expectedError)
+        }
+      }
+
+      "given role creation error" in {
+
+        val roleName = "New Role"
+        val role = RoleCreationRequest(Some(roleName))
+         service.create _ when roleName returns EitherT.leftT("Something happened")
+
+        val request = roleCreationRequest(role)
+        val response = send(defaultRoutes)(request)
+        val expectedError = Error("Something happened")
+
+        response.flatMap { res =>
+          res.status shouldBe Status.BadRequest
+          res.as[Error].asserting(_ shouldBe expectedError)
+        }
+      }
     }
 
   }
 
-//    "update data when id exists" in {
-//
-//      val id = 1
-//      val requestData = Data(None, 2)
-//      val expectedCreatedData = requestData.copy(id = Some(id))
-//
-//      (repository.update _).when(id, requestData).returns(IO.pure(Some(expectedCreatedData)))
-//
-//      val requestJson = requestData.asJson.toString()
-//      val request = Request[IO](PUT, Uri.unsafeFromString(s"/data/$id")).withEntity(requestJson)
-//      val response = send(request)
-//
-//      response.status shouldBe Status.Ok
-//      response.as[Json].unsafeRunSync() shouldBe expectedCreatedData.asJson
-//
-//    }
-//
-//    "do not update data when id does not exist" in {
-//
-//      val id = 1
-//      val requestData = Data(None, 2)
-//
-//      (repository.update _).when(id, requestData).returns(IO.pure(None))
-//
-//      val requestJson = requestData.asJson.toString()
-//      val request = Request[IO](PUT, Uri.unsafeFromString(s"/data/$id")).withEntity(requestJson)
-//      val response = send(request)
-//
-//      response.status shouldBe Status.NotFound
-//
-//    }
-//
-//    "return a single data when id exists" in {
-//
-//      val id = 1
-//      val requestData = Data(None, 2)
-//      val expectedCreatedData = requestData.copy(id = Some(id))
-//
-//      (repository.findById _).when(id).returns(IO.pure(Some(expectedCreatedData)))
-//
-//      val requestJson = requestData.asJson.toString()
-//      val request = Request[IO](GET, Uri.unsafeFromString(s"/data/$id")).withEntity(requestJson)
-//      val response = send(request)
-//
-//      response.status shouldBe Status.Ok
-//      response.as[Json].unsafeRunSync() shouldBe expectedCreatedData.asJson
-//
-//    }
-//
-//    "do not return a single data when id does not exist" in {
-//
-//      val id = 1
-//      val requestData = Data(None, 2)
-//
-//      (repository.findById _).when(id).returns(IO.pure(None))
-//
-//      val requestJson = requestData.asJson.toString()
-//      val request = Request[IO](GET, Uri.unsafeFromString(s"/data/$id")).withEntity(requestJson)
-//      val response = send(request)
-//
-//      response.status shouldBe Status.NotFound
-//
-//    }
-//
-//    "return all data" in {
-//
-//      val dataStream = Stream(
-//        Data(Some(1), 11),
-//        Data(Some(2), 22),
-//        Data(Some(3), 33)
-//      )
-//      val limit = 10
-//      val offset = 0
-//
-//      (repository.get _).when(limit, offset, None).returns(dataStream)
-//
-//      val request = Request[IO](GET, Uri.unsafeFromString(s"/data?limit=$limit&offset=$offset"))
-//      val response = send(request)
-//
-//      response.status shouldBe Status.Ok
-//      response.as[Json].unsafeRunSync() shouldBe dataStream.toList.asJson
-//
-//    }
-//
-//    "delete data when id exists" in {
-//
-//      val id = 1
-//      (repository.delete _).when(id).returns(IO.pure(Some(())))
-//
-//      val request = Request[IO](DELETE, Uri.unsafeFromString(s"/data/$id"))
-//      val response = send(request)
-//
-//      response.status shouldBe Status.NoContent
-//
-//    }
-//
-//    "do not delete data when id does not exist" in {
-//
-//      val id = 1
-//      (repository.delete _).when(id).returns(IO.pure(None))
-//
-//      val request = Request[IO](DELETE, Uri.unsafeFromString(s"/data/$id"))
-//      val response = send(request)
-//
-//      response.status shouldBe Status.NotFound
-//
-//    }
-//
-//  }
+  private def roleCreationRequest(role: RoleCreationRequest) = {
+    Request[IO](POST, uri"/teams/roles").withEntity(role)
+  }
+
+  "Role assignment" - {
+
+    "should return 204 given team exists and user is a member" in {
+
+      val assignment = RoleAssignmentRequest(Some(roleId))
+      service.assign _ when (teamId, userId, roleId) returns EitherT.rightT(true)
+
+      val request = roleAssignmentRequest(teamId, userId, assignment)
+      val response = send(defaultRoutes)(request)
+
+      response.map { res =>
+        res.status shouldBe Status.NoContent
+      }
+    }
+
+    "should return 400 with errors" - {
+
+      "given invalid request" in {
+
+        val assignment = RoleAssignmentRequest(None)
+        val invalidator: Validator[RoleAssignmentRequest] = _ => invalidNec("Missing role id")
+        val routes = RoleRoutes(service, assignmentValidator = invalidator)
+
+        val request = roleAssignmentRequest(teamId, userId, assignment)
+        val response = send(routes)(request)
+        val expectedError = Error("Missing role id")
+
+        response.flatMap { res =>
+          res.status shouldBe Status.BadRequest
+          res.as[Error].asserting(_ shouldBe expectedError)
+        }
+
+      }
+
+      "given role assignment error" in {
+
+        val assignment = RoleAssignmentRequest(Some(roleId))
+        service.assign _ when (teamId, userId, roleId) returns EitherT.leftT("Something happened")
+
+        val request = roleAssignmentRequest(teamId, userId, assignment)
+        val response = send(defaultRoutes)(request)
+        val expectedError = Error("Something happened")
+
+        response.flatMap { res =>
+          res.status shouldBe Status.BadRequest
+          res.as[Error].asserting(_ shouldBe expectedError)
+        }
+
+      }
+    }
+
+  }
+
+  private def roleAssignmentRequest(teamId: UUID, userId: UUID, assignment: RoleAssignmentRequest) = {
+    Request[IO](PUT, uri"/teams" / teamId / "members" / userId / "role").withEntity(assignment)
+  }
+
+  "Role lookup" - {
+    "should return 200 with the assigned role given team exists and user is a member" in {
+
+      val assignedRole = Role(
+        id = UUID.fromString("06e5800d-598e-48b8-890a-02d6e61fab6b"),
+        name = "Assigned Role"
+      )
+
+      service.roleLookup _ when (teamId, userId) returns EitherT.pure(assignedRole)
+
+      val request = roleLookupRequest(teamId, userId)
+      val response = send(defaultRoutes)(request)
+
+      response.flatMap { res =>
+        res.status shouldBe Status.Ok
+        res.as[Role].asserting(_ shouldBe assignedRole)
+      }
+    }
+
+    "should return 400 with errors role lookup error" in {
+
+      service.roleLookup _ when (teamId, userId) returns EitherT.leftT("Something happened")
+
+      val request = roleLookupRequest(teamId, userId)
+      val response = send(defaultRoutes)(request)
+      val expectedError = Error("Something happened")
+
+      response.flatMap { res =>
+        res.status shouldBe Status.BadRequest
+        res.as[Error].asserting(_ shouldBe expectedError)
+      }
+
+    }
+  }
+
+  private def roleLookupRequest(teamId: UUID, userId: UUID) = {
+    Request[IO](GET, uri"/teams" / teamId / "members" / userId / "role")
+  }
 
 }

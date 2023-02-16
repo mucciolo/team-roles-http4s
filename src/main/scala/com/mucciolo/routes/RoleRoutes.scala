@@ -3,7 +3,6 @@ package com.mucciolo.routes
 import cats.data.Validated.{Invalid, Valid}
 import cats.effect.IO
 import cats.implicits._
-import com.mucciolo.repository.RoleInsert
 import com.mucciolo.service.RoleService
 import com.mucciolo.util.Validator
 import io.circe.generic.encoding.DerivedAsObjectEncoder.deriveEncoder
@@ -14,55 +13,44 @@ import org.http4s.dsl.Http4sDsl
 
 object RoleRoutes extends Http4sDsl[IO] {
 
-  private object QueryParam {
-    object Limit extends QueryParamDecoderMatcher[Int]("limit")
-    object Offset extends QueryParamDecoderMatcher[Int]("offset")
-    object MinValue extends OptionalQueryParamDecoderMatcher[Int]("min")
-  }
-
   def apply(
     roleService: RoleService,
-    roleValidator: Validator[RoleInsert] = RoleInsert.validator
+    roleValidator: Validator[RoleCreationRequest] = RoleCreationRequest.validator,
+    assignmentValidator: Validator[RoleAssignmentRequest] = RoleAssignmentRequest.validator,
   ): HttpRoutes[IO] = HttpRoutes.of[IO] {
 
     case req @ POST -> Root / "teams" / "roles" =>
-      req.decodeJson[RoleInsert].flatMap { role =>
-        roleValidator.validate(role) match {
+      req.decodeJson[RoleCreationRequest].flatMap { roleCreationRequest =>
+        roleValidator.validate(roleCreationRequest) match {
 
           case Invalid(errors) =>
             BadRequest(Error(errors))
 
-          case Valid(newRole) =>
+          case Valid(roleCreationRequest) =>
             roleService
-              .create(newRole)
+              .create(roleCreationRequest.name.get)
               .foldF(err => BadRequest(Error(err)), role => Created(role))
         }
       }
 
-    //    case GET -> DataPath :? QueryParam.Limit(limit) +& QueryParam.Offset(offset) +& QueryParam.MinValue(min)  =>
-    //      Ok(
-    //        Stream("[") ++ roleRepository.get(limit, offset, min).map(_.asJson.noSpaces).intersperse(",") ++ Stream("]"),
-    //        `Content-Type`(MediaType.application.json)
-    //      )
-    //
-    //    case GET -> DataPath / LongVar(id) =>
-    //      for {
-    //        result <- roleRepository.findById(id)
-    //        response <- result match {
-    //          case Some(data) => Ok(data.asJson)
-    //          case None => NotFound()
-    //        }
-    //      } yield response
-    //
-    //    case req @ PUT -> DataPath / LongVar(id) =>
-    //      for {
-    //        data <- req.decodeJson[Role]
-    //        result <- roleRepository.update(id, data)
-    //        response <- result match {
-    //          case Some(data) => Ok(data.asJson)
-    //          case None => NotFound()
-    //        }
-    //      } yield response
+    case req @ PUT -> Root / "teams" / UUIDVar(teamId) / "members" / UUIDVar(userId) / "role" =>
+      req.decodeJson[RoleAssignmentRequest].flatMap { roleAssignmentRequest =>
+        assignmentValidator.validate(roleAssignmentRequest) match {
+
+          case Invalid(errors) =>
+            BadRequest(Error(errors))
+
+          case Valid(roleCreationRequest) =>
+            roleService
+              .assign(teamId, userId, roleCreationRequest.roleId.get)
+              .foldF(err => BadRequest(Error(err)), _ => NoContent())
+        }
+      }
+
+    case GET -> Root / "teams" / UUIDVar(teamId) / "members" / UUIDVar(userId) / "role" =>
+      roleService
+        .roleLookup(teamId, userId)
+        .foldF(err => BadRequest(Error(err)), Ok(_))
 
   }
 }

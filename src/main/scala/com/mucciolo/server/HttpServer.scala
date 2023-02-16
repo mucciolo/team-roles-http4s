@@ -2,18 +2,22 @@ package com.mucciolo.server
 
 import cats.effect.{IO, Resource}
 import com.comcast.ip4s.{Host, IpLiteralSyntax, Port}
+import com.mucciolo.client.userteams.HttpUserTeamsClient
 import com.mucciolo.config.{AppConf, ServerConf}
 import com.mucciolo.database.Database
 import com.mucciolo.repository.SQLRoleRepository
 import com.mucciolo.routes.RoleRoutes
 import com.mucciolo.service.RoleServiceImpl
 import doobie.hikari.HikariTransactor
+import org.http4s.HttpRoutes
+import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
 import org.http4s.server.middleware.Logger
-import pureconfig.ConfigSource
 import pureconfig.generic.auto._
 import pureconfig.module.catseffect.syntax._
+import pureconfig._
+import pureconfig.module.http4s._
 
 import scala.concurrent.ExecutionContext
 
@@ -29,27 +33,27 @@ object HttpServer {
       config <- Resource.eval(ConfigSource.default.loadF[IO, AppConf]())
       transactor <- Database.transactor(config.database, ExecutionContext.global)
       _ <- Database.migrate(transactor)
-      _ <- buildEmberServer(config.server, transactor)
+      httpClient <- EmberClientBuilder.default[IO].build
+      roleRepository = new SQLRoleRepository(transactor)
+      userTeamsClient = new HttpUserTeamsClient(httpClient, config.userTeamsClient)
+      roleService = new RoleServiceImpl(roleRepository, userTeamsClient)
+      roleRoutes = RoleRoutes(roleService)
+      _ <- buildEmberServer(config.server, transactor, roleRoutes)
     } yield ()
   }.useForever
 
   private def buildEmberServer(
-    config: ServerConf, transactor: HikariTransactor[IO]
+    config: ServerConf, transactor: HikariTransactor[IO], routes: HttpRoutes[IO]
   ): Resource[IO, Server] = {
 
-    val roleRepository = new SQLRoleRepository(transactor)
-    val roleService = new RoleServiceImpl(roleRepository)
-    val roleRoutes = RoleRoutes(roleService)
+    val httpApp = Logger.httpApp(
+      logHeaders = config.logHeaders, logBody = config.logBody
+    )(routes.orNotFound)
 
     EmberServerBuilder.default[IO]
       .withHost(Host.fromString(config.host).getOrElse(Default.host))
       .withPort(Port.fromInt(config.port).getOrElse(Default.port))
-      .withHttpApp(
-        Logger.httpApp(
-          logHeaders = config.logHeaders,
-          logBody = config.logBody
-        )(roleRoutes.orNotFound)
-      )
+      .withHttpApp(httpApp)
       .build
   }
 }

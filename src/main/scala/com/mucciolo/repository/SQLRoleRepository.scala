@@ -1,6 +1,6 @@
 package com.mucciolo.repository
 
-import cats.data.EitherT
+import cats.data.{EitherT, OptionT}
 import cats.effect.IO
 import cats.implicits._
 import doobie.implicits._
@@ -12,23 +12,73 @@ import scala.language.postfixOps
 
 final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository {
 
-  override def insert(role: RoleInsert): EitherT[IO, String, Role] = {
+  private val UnexpectedErrorMsg = "Unexpected error"
+
+  override def insert(roleName: String): EitherT[IO, String, Role] = {
     EitherT(
-      sql"INSERT INTO roles (name) VALUES (${role.name})".update
+      sql"""
+            INSERT INTO roles (name)
+            VALUES ($roleName)
+         """
+        .update
         .withUniqueGeneratedKeys[Role]("id", "name")
         .transact(transactor)
         .attemptSql
     )
       .leftMap { error =>
-        if (error.getMessage.contains(s"Key (name)=(${role.name}) already exists"))
+        if (error.getMessage.contains(s"Key (name)=($roleName) already exists"))
           "Role name already exists"
         else
-          "Unexpected error"
+          UnexpectedErrorMsg
       }
   }
 
-  def findById(id: UUID): IO[Option[Role]] = {
-    sql"SELECT * FROM data WHERE id = ${id.toString}".query[Role].option.transact(transactor)
+
+  override def findByName(name: String): OptionT[IO, Role] = {
+    OptionT(
+      sql"""
+            SELECT *
+            FROM roles
+            WHERE name = $name
+            LIMIT 1
+         """
+        .query[Role]
+        .option
+        .transact(transactor)
+    )
   }
 
+  override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, String, Boolean] = {
+    EitherT(
+      sql"""
+            INSERT INTO team_member_role
+            VALUES ($teamId, $userId, $roleId)
+            ON CONFLICT (team_id, user_id) DO UPDATE SET role_id = excluded.role_id
+         """
+        .update
+        .run
+        .transact(transactor)
+        .attemptSql
+    ).leftMap { error =>
+      if (error.getMessage.contains(s"Key (role_id)=($roleId) is not present"))
+        "Role not found"
+      else
+        UnexpectedErrorMsg
+    }.map(_ != 0)
+  }
+
+  override def findByMembership(teamId: UUID, userId: UUID): OptionT[IO, Role] = {
+    OptionT(
+      sql"""
+            SELECT role.id, role.name
+            FROM team_member_role
+            INNER JOIN roles role on role.id = team_member_role.role_id
+            WHERE team_id = $teamId AND user_id = $userId
+            LIMIT 1
+         """
+        .query[Role]
+        .option
+        .transact(transactor)
+    )
+  }
 }
