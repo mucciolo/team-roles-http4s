@@ -3,14 +3,18 @@ package com.mucciolo.database
 import cats.effect._
 import com.mucciolo.config.DatabaseConf
 import doobie.hikari.HikariTransactor
+import doobie.hikari.HikariTransactor.newHikariTransactor
 import org.flywaydb.core.Flyway
 
 import scala.concurrent.ExecutionContext
 
 object Database {
 
-  def transactor(config: DatabaseConf, executionContext: ExecutionContext): Resource[IO, HikariTransactor[IO]] = {
-    HikariTransactor.newHikariTransactor[IO](config.driver, config.url, config.user, config.pass,executionContext)
+  def transactor(
+    config: DatabaseConf,
+    executionContext: ExecutionContext)
+  : Resource[IO, HikariTransactor[IO]] = {
+    newHikariTransactor[IO](config.driver, config.url, config.user, config.pass,executionContext)
   }
 
   def migrate(transactor: HikariTransactor[IO]): Resource[IO, Unit] = {

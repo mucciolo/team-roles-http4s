@@ -29,7 +29,7 @@ final class RoleServiceImpl(
       .map(team => team.teamLeadId == userId || team.teamMemberIds.contains(userId))
 
   private def findTeamById(teamId: UUID): EitherT[IO, String, Team] = {
-    EitherT.fromOptionF(userTeamsClient.findTeamById(teamId), "Team not found")
+    userTeamsClient.findTeamById(teamId).toRight("Team not found")
   }
 
   override def assign(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, String, Option[Boolean]] = {
@@ -44,10 +44,17 @@ final class RoleServiceImpl(
   }
 
   override def roleLookup(teamId: UUID, userId: UUID): EitherT[IO, String, Role] = {
-    // TODO repo first
-    isUserTeamMember(userId, teamId).ifM(
-      EitherT.right(repository.findByMembership(teamId, userId).getOrElse(DefaultRole)),
-      EitherT.leftT("User is not a team member")
+    EitherT(
+      repository
+        .findByMembership(teamId, userId)
+        .value
+        .flatMap {
+          case Some(role) => IO(Right(role))
+          case None =>
+            isUserTeamMember(userId, teamId)
+              .subflatMap(x => Either.cond(x, DefaultRole, "User is not a team member"))
+              .value
+        }
     )
   }
 

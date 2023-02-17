@@ -61,7 +61,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
         "should return error given nonexistent team" in {
 
           repository.findById _ when role.id returns OptionT.pure(role)
-          userTeamsClient.findTeamById _ when teamId returns IO.pure(None)
+          userTeamsClient.findTeamById _ when teamId returns OptionT.none
 
           service.assign(teamId, userId, role.id)
             .value
@@ -82,7 +82,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
           )
 
           repository.findById _ when role.id returns OptionT.pure(role)
-          userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
+          userTeamsClient.findTeamById _ when teamId returns OptionT.some(team)
 
           service.assign(teamId, userId, role.id)
             .value
@@ -104,7 +104,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
 
           repository.findById _ when role.id returns OptionT.pure(role)
           repository.upsertMembershipRole _ when (teamId, userId, role.id) returns EitherT.rightT(true)
-          userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
+          userTeamsClient.findTeamById _ when teamId returns OptionT.some(team)
 
           service.assign(teamId, userId, role.id)
             .value
@@ -127,7 +127,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
 
           repository.findById _ when role.id returns OptionT.pure(role)
           repository.upsertMembershipRole _ when (teamId, userId, role.id) returns EitherT.rightT(true)
-          userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
+          userTeamsClient.findTeamById _ when teamId returns OptionT.some(team)
 
           service.assign(teamId, userId, role.id)
             .value
@@ -141,7 +141,8 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
     "roleLookup" - {
       "should return error given nonexistent team" in {
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(None)
+        repository.findByMembership _ when (teamId, userId) returns OptionT.none
+        userTeamsClient.findTeamById _ when teamId returns OptionT.none
 
         service.roleLookup(teamId, userId)
           .value
@@ -162,7 +163,8 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
         )
 
         repository.findById _ when role.id returns OptionT.pure(role)
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
+        repository.findByMembership _ when (teamId, userId) returns OptionT.none
+        userTeamsClient.findTeamById _ when teamId returns OptionT.some(team)
 
         service.roleLookup(teamId, userId)
           .value
@@ -183,8 +185,8 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
           )
         )
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
         repository.findByMembership _ when (teamId, userId) returns OptionT.none
+        userTeamsClient.findTeamById _ when teamId returns OptionT.some(team)
 
         service.roleLookup(teamId, userId)
           .value
@@ -209,7 +211,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
           name = "Assigned Role"
         )
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
+        userTeamsClient.findTeamById _ when teamId returns OptionT.some(team)
         repository.findByMembership _ when (teamId, userId) returns OptionT.pure(assignedRole)
 
         service.roleLookup(teamId, userId)

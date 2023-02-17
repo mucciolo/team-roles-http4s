@@ -18,7 +18,7 @@ import java.util.UUID
 final class HttpUserTeamsClientSpec extends FixtureAsyncFreeSpec with Matchers with BeforeAndAfterAll
   with AsyncIOSpec with CatsResourceIO[HttpUserTeamsClient] {
 
-  private val wireMockServer = new WireMockServer()
+  private val wireMockServer = new WireMockServer(8089)
   override val resource: Resource[IO, HttpUserTeamsClient] =
     EmberClientBuilder
       .default[IO]
@@ -61,7 +61,7 @@ final class HttpUserTeamsClientSpec extends FixtureAsyncFreeSpec with Matchers w
           )
       )
 
-      client.findTeamById(teamId).asserting(_ shouldBe Some(team))
+      client.findTeamById(teamId).value.asserting(_ shouldBe Some(team))
 
     }
 
@@ -78,7 +78,7 @@ final class HttpUserTeamsClientSpec extends FixtureAsyncFreeSpec with Matchers w
           )
       )
 
-      client.findTeamById(teamId).asserting(_ shouldBe None)
+      client.findTeamById(teamId).value.asserting(_ shouldBe None)
 
     }
   }
