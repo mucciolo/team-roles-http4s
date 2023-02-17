@@ -6,7 +6,7 @@ import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.implicits.catsSyntaxEitherId
 import com.mucciolo.repository._
-import com.mucciolo.service.RoleService
+import com.mucciolo.service.{Membership, RoleService}
 import com.mucciolo.util.Validator
 import org.http4s.Method.{GET, POST, PUT}
 import org.http4s.circe.CirceEntityCodec.{circeEntityDecoder, circeEntityEncoder}
@@ -99,7 +99,7 @@ final class RoleRoutesSpec extends AsyncFreeSpec with AsyncIOSpec with AsyncMock
     "should return 204 given team exists and user is a member" in {
 
       val assignment = RoleAssignmentRequest(Some(roleId))
-      service.assign _ when (teamId, userId, roleId) returns EitherT.rightT(true)
+      service.assign _ when (teamId, userId, roleId) returns EitherT.rightT(Some(true))
 
       val request = roleAssignmentRequest(teamId, userId, assignment)
       val response = send(defaultRoutes)(request)
@@ -145,6 +145,21 @@ final class RoleRoutesSpec extends AsyncFreeSpec with AsyncIOSpec with AsyncMock
       }
     }
 
+    "should return 404 given role does not exist" in {
+
+      val assignment = RoleAssignmentRequest(Some(roleId))
+
+      service.assign _ when (teamId, userId, roleId) returns EitherT.rightT(None)
+
+      val request = roleAssignmentRequest(teamId, userId, assignment)
+      val response = send(defaultRoutes)(request)
+
+      response.asserting { res =>
+        res.status shouldBe Status.NotFound
+      }
+
+    }
+
   }
 
   private def roleAssignmentRequest(teamId: UUID, userId: UUID, assignment: RoleAssignmentRequest) = {
@@ -188,6 +203,49 @@ final class RoleRoutesSpec extends AsyncFreeSpec with AsyncIOSpec with AsyncMock
 
   private def roleLookupRequest(teamId: UUID, userId: UUID) = {
     Request[IO](GET, uri"/teams" / teamId / "members" / userId / "role")
+  }
+
+  "Membership lookup by role" - {
+    "should return 200 with memberships given existing role" in {
+
+      val memberships = List(
+        Membership(
+          UUID.fromString("fb236e8f-d5da-494f-9b19-26c516d40d88"),
+          UUID.fromString("be4546a8-1952-4864-97ad-1d14595b209e")
+        ),
+        Membership(
+          UUID.fromString("d00f591f-6556-47a4-8894-3834fd921468"),
+          UUID.fromString("035377a0-dc70-4f40-a617-192caf47ad6b")
+        )
+      )
+
+      service.membershipLookup _ when roleId returns OptionT.pure(memberships)
+
+      val request = membershipLookupRequest(roleId)
+      val response = send(defaultRoutes)(request)
+
+      response.flatMap { res =>
+        res.status shouldBe Status.Ok
+        res.as[List[Membership]].asserting(_ shouldBe memberships)
+      }
+    }
+
+    "should return 404 given role does not exist" in {
+
+      service.membershipLookup _ when roleId returns OptionT.none
+
+      val request = membershipLookupRequest(roleId)
+      val response = send(defaultRoutes)(request)
+
+      response.asserting { res =>
+        res.status shouldBe Status.NotFound
+      }
+
+    }
+  }
+
+  private def membershipLookupRequest(roleId: UUID) = {
+    Request[IO](GET, uri"/roles" / roleId / "assignments")
   }
 
 }

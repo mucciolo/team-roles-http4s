@@ -5,7 +5,6 @@ import cats.effect.IO
 import cats.implicits._
 import com.mucciolo.service.RoleService
 import com.mucciolo.util.Validator
-import io.circe.generic.encoding.DerivedAsObjectEncoder.deriveEncoder
 import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
 import org.http4s.circe._
@@ -43,7 +42,7 @@ object RoleRoutes extends Http4sDsl[IO] {
           case Valid(roleCreationRequest) =>
             roleService
               .assign(teamId, userId, roleCreationRequest.roleId.get)
-              .foldF(err => BadRequest(Error(err)), _ => NoContent())
+              .foldF(err => BadRequest(Error(err)), _.fold(NotFound())(_ => NoContent()))
         }
       }
 
@@ -51,6 +50,11 @@ object RoleRoutes extends Http4sDsl[IO] {
       roleService
         .roleLookup(teamId, userId)
         .foldF(err => BadRequest(Error(err)), Ok(_))
+
+    case GET -> Root / "roles" / UUIDVar(roleId) / "assignments" =>
+      roleService
+        .membershipLookup(roleId)
+        .foldF(NotFound())(Ok(_))
 
   }
 }

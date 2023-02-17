@@ -33,8 +33,8 @@ object HttpServer {
       config <- Resource.eval(ConfigSource.default.loadF[IO, AppConf]())
       transactor <- Database.transactor(config.database, ExecutionContext.global)
       _ <- Database.migrate(transactor)
-      httpClient <- EmberClientBuilder.default[IO].build
       roleRepository = new SQLRoleRepository(transactor)
+      httpClient <- EmberClientBuilder.default[IO].build
       userTeamsClient = new HttpUserTeamsClient(httpClient, config.userTeamsClient)
       roleService = new RoleServiceImpl(roleRepository, userTeamsClient)
       roleRoutes = RoleRoutes(roleService)

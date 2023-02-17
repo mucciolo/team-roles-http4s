@@ -3,6 +3,7 @@ package com.mucciolo.repository
 import cats.data.{EitherT, OptionT}
 import cats.effect.IO
 import cats.implicits._
+import com.mucciolo.service.Membership
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.util.transactor.Transactor
@@ -33,21 +34,6 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
       }
   }
 
-
-  override def findByName(name: String): OptionT[IO, Role] = {
-    OptionT(
-      sql"""
-            SELECT *
-            FROM roles
-            WHERE name = $name
-            LIMIT 1
-         """
-        .query[Role]
-        .option
-        .transact(transactor)
-    )
-  }
-
   override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, String, Boolean] = {
     EitherT(
       sql"""
@@ -76,6 +62,33 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
             WHERE team_id = $teamId AND user_id = $userId
             LIMIT 1
          """
+        .query[Role]
+        .option
+        .transact(transactor)
+    )
+  }
+
+  override def findMemberships(roleId: UUID): IO[List[Membership]] = {
+    sql"""
+          SELECT team_id, user_id
+          FROM team_member_role
+          WHERE role_id = $roleId
+       """
+      .query[Membership]
+      .to[List]
+      .transact(transactor)
+      .attempt
+      .map(_.valueOr(e => {println(e); List.empty}))
+  }
+
+  override def findById(roleId: UUID): OptionT[IO, Role] = {
+    OptionT(
+      sql"""
+            SELECT *
+            FROM roles
+            WHERE id = $roleId
+            LIMIT 1
+           """
         .query[Role]
         .option
         .transact(transactor)

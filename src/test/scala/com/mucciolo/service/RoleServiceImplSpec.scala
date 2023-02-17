@@ -5,7 +5,6 @@ import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import com.mucciolo.client.userteams.{Team, UserTeamsClient}
 import com.mucciolo.repository._
-import org.scalamock.matchers.ArgCapture.CaptureOne
 import org.scalamock.scalatest.AsyncMockFactory
 import org.scalatest.EitherValues
 import org.scalatest.freespec.AsyncFreeSpec
@@ -16,20 +15,15 @@ import java.util.UUID
 final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
   with AsyncMockFactory with Matchers with EitherValues {
 
+  private val teamId = UUID.fromString("5bd70a66-f6a0-42fc-8bdb-6c40841fab62")
+  private val userId = UUID.fromString("ef2d1c0b-7ddb-446d-80d4-77301cbd4ffa")
+  private val role = PredefRoles.developer
+
   private val repository = stub[RoleRepository]
-  private val developerRole = Role(
-    id = UUID.fromString("b3a0cb7e-ccb7-48d6-ae6e-51e4cd158a98"),
-    name = "Developer"
-  )
-  repository.findByName _ when "Developer" returns OptionT.pure(developerRole)
   private val userTeamsClient = stub[UserTeamsClient]
   private val service = new RoleServiceImpl(repository, userTeamsClient)
 
   "RoleServiceImpl" - {
-
-    val teamId = UUID.fromString("5bd70a66-f6a0-42fc-8bdb-6c40841fab62")
-    val userId = UUID.fromString("ef2d1c0b-7ddb-446d-80d4-77301cbd4ffa")
-    val roleId = UUID.fromString("c0afd886-7903-461c-aff5-faa9b623aa5e")
 
     "create" - {
       "should normalize role name spaces" in {
@@ -50,99 +44,96 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
     }
 
     "assign" - {
-      "should return error given nonexistent team" in {
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(None)
+      "given role does not exists" - {
+        "should return error" in {
 
-        service.assign(teamId, userId, roleId)
-          .value
-          .asserting(_.left.value shouldBe "Team not found")
+          repository.findById _ when role.id returns OptionT.none
 
+          service.assign(teamId, userId, role.id)
+            .value
+            .asserting(_.value shouldBe None)
+
+        }
       }
 
-      "should return error given user is not a team member" in {
+      "given existing role" - {
+        "should return error given nonexistent team" in {
 
-        val team = Team(
-          id = teamId,
-          name = "Not a team member",
-          teamLeadId = UUID.fromString("68375515-cd6f-4fd7-963e-277de152f9c1"),
-          teamMemberIds = Set(
-            UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
-            UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6")
+          repository.findById _ when role.id returns OptionT.pure(role)
+          userTeamsClient.findTeamById _ when teamId returns IO.pure(None)
+
+          service.assign(teamId, userId, role.id)
+            .value
+            .asserting(_.left.value shouldBe "Team not found")
+
+        }
+
+        "should return error given user is not a team member" in {
+
+          val team = Team(
+            id = teamId,
+            name = "Not a team member",
+            teamLeadId = UUID.fromString("68375515-cd6f-4fd7-963e-277de152f9c1"),
+            teamMemberIds = Set(
+              UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
+              UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6")
+            )
           )
-        )
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
+          repository.findById _ when role.id returns OptionT.pure(role)
+          userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
 
-        service.assign(teamId, userId, roleId)
-          .value
-          .asserting(_.left.value shouldBe "User is not a team member")
+          service.assign(teamId, userId, role.id)
+            .value
+            .asserting(_.left.value shouldBe "User is not a team member")
 
-      }
+        }
 
-      "should return error given nonexistent role" in {
+        "should return true given user is team lead" in {
 
-        val team = Team(
-          id = teamId,
-          name = "Nonexistent role",
-          teamLeadId = UUID.fromString("68375515-cd6f-4fd7-963e-277de152f9c1"),
-          teamMemberIds = Set(
-            UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
-            UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6"),
-            userId
+          val team = Team(
+            id = teamId,
+            name = "User is not team lead",
+            teamLeadId = userId,
+            teamMemberIds = Set(
+              UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
+              UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6")
+            )
           )
-        )
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
-        repository.upsertMembershipRole _ when (teamId, userId, roleId) returns EitherT.leftT("Role not found")
+          repository.findById _ when role.id returns OptionT.pure(role)
+          repository.upsertMembershipRole _ when (teamId, userId, role.id) returns EitherT.rightT(true)
+          userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
 
-        service.assign(teamId, userId, roleId)
-          .value
-          .asserting(_.left.value shouldBe "Role not found")
+          service.assign(teamId, userId, role.id)
+            .value
+            .asserting(_.value shouldBe Some(true))
 
-      }
+        }
 
-      "should return true given user is team lead" in {
+        "should return true given user is a team member" in {
 
-        val team = Team(
-          id = teamId,
-          name = "User is not team lead",
-          teamLeadId = userId,
-          teamMemberIds = Set(
-            UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
-            UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6")
+          val team = Team(
+            id = teamId,
+            name = "User is not team lead",
+            teamLeadId = UUID.fromString("68375515-cd6f-4fd7-963e-277de152f9c1"),
+            teamMemberIds = Set(
+              UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
+              UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6"),
+              userId
+            )
           )
-        )
 
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
-        repository.upsertMembershipRole _ when (teamId, userId, roleId) returns EitherT.rightT(true)
+          repository.findById _ when role.id returns OptionT.pure(role)
+          repository.upsertMembershipRole _ when (teamId, userId, role.id) returns EitherT.rightT(true)
+          userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
 
-        service.assign(teamId, userId, roleId)
-          .value
-          .asserting(_.value shouldBe true)
+          service.assign(teamId, userId, role.id)
+            .value
+            .asserting(_.value shouldBe Some(true))
 
-      }
-
-      "should return true given user is a team member" in {
-
-        val team = Team(
-          id = teamId,
-          name = "User is not team lead",
-          teamLeadId = UUID.fromString("68375515-cd6f-4fd7-963e-277de152f9c1"),
-          teamMemberIds = Set(
-            UUID.fromString("9853d919-743e-46f8-bd5a-e234cf103297"),
-            UUID.fromString("6960b480-d5da-46f3-a00f-9ccc72af3ee6"),
-            userId
-          )
-        )
-
-        userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
-        repository.upsertMembershipRole _ when (teamId, userId, roleId) returns EitherT.rightT(true)
-
-        service.assign(teamId, userId, roleId)
-          .value
-          .asserting(_.value shouldBe true)
-
+        }
       }
 
     }
@@ -170,6 +161,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
           )
         )
 
+        repository.findById _ when role.id returns OptionT.pure(role)
         userTeamsClient.findTeamById _ when teamId returns IO.pure(Some(team))
 
         service.roleLookup(teamId, userId)
@@ -196,7 +188,7 @@ final class RoleServiceImplSpec extends AsyncFreeSpec with AsyncIOSpec
 
         service.roleLookup(teamId, userId)
           .value
-          .asserting(_.value shouldBe developerRole)
+          .asserting(_.value shouldBe PredefRoles.developer)
 
       }
 

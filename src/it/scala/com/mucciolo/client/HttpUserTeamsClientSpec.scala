@@ -1,3 +1,5 @@
+package com.mucciolo.client
+
 import cats.effect.testing.scalatest.{AsyncIOSpec, CatsResourceIO}
 import cats.effect.{IO, Resource}
 import com.github.tomakehurst.wiremock.WireMockServer
