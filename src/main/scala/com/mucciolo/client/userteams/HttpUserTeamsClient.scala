@@ -3,8 +3,8 @@ package com.mucciolo.client.userteams
 import cats.effect.IO
 import com.mucciolo.config.UserTeamsClientConf
 import org.http4s.Method.GET
-import org.http4s.{EntityDecoder, Request, circe}
 import org.http4s.client.Client
+import org.http4s.{EntityDecoder, Request, circe}
 
 import java.util.UUID
 

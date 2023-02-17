@@ -8,15 +8,14 @@ import com.mucciolo.database.Database
 import com.mucciolo.repository.SQLRoleRepository
 import com.mucciolo.routes.RoleRoutes
 import com.mucciolo.service.RoleServiceImpl
-import doobie.hikari.HikariTransactor
 import org.http4s.HttpRoutes
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
 import org.http4s.server.middleware.Logger
+import pureconfig._
 import pureconfig.generic.auto._
 import pureconfig.module.catseffect.syntax._
-import pureconfig._
 import pureconfig.module.http4s._
 
 import scala.concurrent.ExecutionContext
@@ -38,13 +37,11 @@ object HttpServer {
       userTeamsClient = new HttpUserTeamsClient(httpClient, config.userTeamsClient)
       roleService = new RoleServiceImpl(roleRepository, userTeamsClient)
       roleRoutes = RoleRoutes(roleService)
-      _ <- buildEmberServer(config.server, transactor, roleRoutes)
+      _ <- buildEmberServer(config.server, roleRoutes)
     } yield ()
   }.useForever
 
-  private def buildEmberServer(
-    config: ServerConf, transactor: HikariTransactor[IO], routes: HttpRoutes[IO]
-  ): Resource[IO, Server] = {
+  private def buildEmberServer(config: ServerConf, routes: HttpRoutes[IO]): Resource[IO, Server] = {
 
     val httpApp = Logger.httpApp(
       logHeaders = config.logHeaders, logBody = config.logBody

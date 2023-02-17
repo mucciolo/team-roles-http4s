@@ -2,7 +2,6 @@ package com.mucciolo.service
 
 import cats.data.{EitherT, OptionT}
 import cats.effect.IO
-import cats.data._
 import cats.implicits._
 import com.mucciolo.client.userteams.{Team, UserTeamsClient}
 import com.mucciolo.repository.{PredefRoles, Role, RoleRepository}
@@ -45,6 +44,7 @@ final class RoleServiceImpl(
   }
 
   override def roleLookup(teamId: UUID, userId: UUID): EitherT[IO, String, Role] = {
+    // TODO repo first
     isUserTeamMember(userId, teamId).ifM(
       EitherT.right(repository.findByMembership(teamId, userId).getOrElse(DefaultRole)),
       EitherT.leftT("User is not a team member")

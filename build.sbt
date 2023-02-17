@@ -29,8 +29,6 @@ lazy val root = (project in file("."))
       "io.circe"               %% "circe-generic"                   % CirceVersion,
       "io.circe"               %% "circe-parser"                    % CirceVersion,
 
-      "ch.qos.logback"         % "logback-classic"                  % LogbackVersion,
-
       "com.github.pureconfig"  %% "pureconfig"                      % PureConfigVersion,
       "com.github.pureconfig"  %% "pureconfig-cats-effect"          % PureConfigVersion,
       "com.github.pureconfig"  %% "pureconfig-http4s"               % PureConfigVersion,
@@ -42,6 +40,8 @@ lazy val root = (project in file("."))
       "org.flywaydb"           % "flyway-core"                      % FlywayVersion,
 
       "org.apache.commons"     % "commons-lang3"                    % ApacheCommonsVersion,
+
+      "ch.qos.logback"         % "logback-classic"                  % LogbackVersion,
 
       "org.scalatest"          %% "scalatest"                       % ScalaTestVersion         % "test, it",
       "org.scalamock"          %% "scalamock"                       % ScalaMockVersion         % "test",
