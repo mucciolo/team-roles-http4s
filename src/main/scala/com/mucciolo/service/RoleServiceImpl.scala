@@ -33,14 +33,10 @@ final class RoleServiceImpl(
   }
 
   override def assign(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, String, Option[Boolean]] = {
-
-    def upsertMembershipRole = isUserTeamMember(userId, teamId).ifM(
+    isUserTeamMember(userId, teamId).ifM(
       repository.upsertMembershipRole(teamId, userId, roleId).map(Some(_)),
       EitherT.leftT("User is not a team member")
-    ).value
-
-    EitherT(isRoleDefined(roleId).ifM(upsertMembershipRole, IO(Right(None))))
-
+    )
   }
 
   override def roleLookup(teamId: UUID, userId: UUID): EitherT[IO, String, Role] = {
@@ -62,9 +58,8 @@ final class RoleServiceImpl(
 
   override def membershipLookup(roleId: UUID): OptionT[IO, List[Membership]] = {
     OptionT(
-      isRoleDefined(roleId).flatMap { isRoleDefined =>
-        Option.when(isRoleDefined)(repository.findMemberships(roleId)).sequence
-      }
+      isRoleDefined(roleId)
+        .flatMap(Option.when(_)(repository.findMemberships(roleId)).sequence)
     )
   }
 
