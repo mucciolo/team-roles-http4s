@@ -6,16 +6,17 @@ import doobie.hikari.HikariTransactor.newHikariTransactor
 import doobie.util.transactor.Transactor
 import org.flywaydb.core.Flyway
 
+import java.util.concurrent.Executors
 import javax.sql.DataSource
 import scala.concurrent.ExecutionContext
 
 object Database {
 
   def newTransactor(
-    config: DatabaseConf,
-    executionContext: ExecutionContext
+    config: DatabaseConf
   ): Resource[IO, Transactor.Aux[IO, _ <: DataSource]] = {
-    newHikariTransactor[IO](config.driver, config.url, config.user, config.pass, executionContext)
+    val ec = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
+    newHikariTransactor[IO](config.driver, config.jdbcUrl, config.user, config.password, ec)
   }
 
   def migrate(transactor: Transactor.Aux[IO, _ <: DataSource]): Resource[IO, Unit] = {

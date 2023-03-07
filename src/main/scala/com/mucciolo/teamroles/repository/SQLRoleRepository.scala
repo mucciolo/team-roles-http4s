@@ -13,9 +13,9 @@ import scala.language.postfixOps
 
 final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository {
 
-  private val UnexpectedErrorMsg = "Unexpected error"
+  private val UnmappedError = Error("*", "unmapped")
 
-  override def insert(roleName: String): EitherT[IO, String, Role] = {
+  override def insert(roleName: String): EitherT[IO, Error, Role] = {
     EitherT(
       sql"""
             INSERT INTO roles (name)
@@ -28,13 +28,13 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
     )
       .leftMap { error =>
         if (error.getMessage.contains(s"Key (name)=($roleName) already exists"))
-          "Role name already exists"
+          Error("role.name", "already.exists")
         else
-          UnexpectedErrorMsg
+          UnmappedError
       }
   }
 
-  override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, String, Boolean] = {
+  override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, Error, Boolean] = {
     EitherT(
       sql"""
             INSERT INTO team_member_role
@@ -47,9 +47,9 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
         .attemptSql
     ).leftMap { error =>
       if (error.getMessage.contains(s"Key (role_id)=($roleId) is not present"))
-        "Role not found"
+        Error("role.id", "not.found")
       else
-        UnexpectedErrorMsg
+        UnmappedError
     }.map(_ != 0)
   }
 

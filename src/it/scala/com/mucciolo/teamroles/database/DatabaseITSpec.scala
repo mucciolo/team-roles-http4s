@@ -4,79 +4,59 @@ import cats.effect.IO
 import cats.effect.kernel.Resource
 import cats.effect.testing.scalatest.{AsyncIOSpec, CatsResourceIO}
 import cats.implicits._
-import com.dimafeng.testcontainers.DockerComposeContainer.ComposeFile
+import com.dimafeng.testcontainers.DockerComposeContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
-import com.dimafeng.testcontainers.{DockerComposeContainer, ExposedService}
-import com.mucciolo.teamroles.config.DatabaseConf
-import com.mucciolo.teamroles.repository.{PredefRoles, SQLRoleRepository}
-import org.scalatest.freespec.FixtureAsyncFreeSpec
-import org.scalatest.matchers.should.Matchers
-import org.scalatest.{EitherValues, OptionValues}
-import org.testcontainers.containers.wait.strategy.Wait
 import com.mucciolo.teamroles.core.Domain._
+import com.mucciolo.teamroles.repository.{PredefRoles, SQLRoleRepository}
 import com.mucciolo.teamroles.util.Database
+import org.scalatest.matchers.should.Matchers
+import org.scalatest.wordspec.FixtureAsyncWordSpec
+import org.scalatest.{EitherValues, OptionValues}
 
-import java.io.File
 import java.util.UUID
-import scala.concurrent.ExecutionContext
 
-class DatabaseIntegrationSpec extends FixtureAsyncFreeSpec with Matchers with EitherValues
+class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValues
   with OptionValues with AsyncIOSpec with CatsResourceIO[SQLRoleRepository]
   with TestContainerForAll {
 
-  override val containerDef: DockerComposeContainer.Def =
-    DockerComposeContainer.Def(
-      ComposeFile(Left(new File("src/it/resources/docker-compose.yml"))),
-      tailChildContainers = true,
-      exposedServices = Seq(
-        ExposedService(
-          "postgres",
-          5433,
-          Wait.forLogMessage(".*database system is ready to accept connections.*", 2)
-        )
-      )
-    )
-
-  private val databaseConf = DatabaseConf(
-    driver = "org.postgresql.Driver",
-    url = "jdbc:postgresql://localhost:5433/test",
-    user = "test",
-    pass = "test"
-  )
+  override val containerDef: DockerComposeContainer.Def = PostgresContainer.Def
 
   override val resource: Resource[IO, SQLRoleRepository] = for {
-    transactor <- Database.newTransactor(databaseConf, ExecutionContext.global)
+    transactor <- Database.newTransactor(PostgresContainer.Conf)
     _ <- Database.migrate(transactor)
   } yield new SQLRoleRepository(transactor)
 
 
-  "Database" - {
-    "should have developer role predefined" in { repository =>
-      repository
-        .findById(PredefRoles.developer.id)
-        .value
-        .asserting(_.value shouldBe PredefRoles.developer)
+  "Database" when {
+    "migrated" should {
+      "have developer role predefined" in { repository =>
+        repository
+          .findById(PredefRoles.developer.id)
+          .value
+          .asserting(_.value shouldBe PredefRoles.developer)
+      }
+
+      "have product owner role predefined" in { repository =>
+        repository
+          .findById(PredefRoles.productOwner.id)
+          .value
+          .asserting(_.value shouldBe PredefRoles.productOwner)
+      }
+
+      "have tester role predefined" in { repository =>
+        repository
+          .findById(PredefRoles.tester.id)
+          .value
+          .asserting(_.value shouldBe PredefRoles.tester)
+      }
     }
 
-    "should have product owner role predefined" in { repository =>
-      repository
-        .findById(PredefRoles.productOwner.id)
-        .value
-        .asserting(_.value shouldBe PredefRoles.productOwner)
-    }
-
-    "should have tester role predefined" in { repository =>
-      repository
-        .findById(PredefRoles.tester.id)
-        .value
-        .asserting(_.value shouldBe PredefRoles.tester)
-    }
   }
 
-  "SQLRoleRepository" - {
+  "SQLRoleRepository" when {
 
-    "insert" - {
-      "should return inserted role given a unique name" in { repository =>
+    "insert" should {
+      "return inserted role given a unique name" in { repository =>
         for {
           errorXorRole <- repository.insert("New Role").value
           insertedRole = errorXorRole.value
@@ -91,13 +71,13 @@ class DatabaseIntegrationSpec extends FixtureAsyncFreeSpec with Matchers with Ei
         repository
           .insert(existingName)
           .value
-          .asserting(_.left.value shouldBe "Role name already exists")
+          .asserting(_ shouldBe Left(Error("role.name", "already.exists")))
       }
     }
 
-    "upsertMembershipRole" - {
+    "upsertMembershipRole" should {
 
-      "should return true given the role exists and there is no membership" in { repository =>
+      "return true given the role exists and there is no membership" in { repository =>
 
         val teamId = UUID.fromString("93f3831b-c2fb-4344-a381-d83da651befc")
         val userId = UUID.fromString("4992e273-4f42-4bb6-a2b8-0f36ad4e04bc")
@@ -114,7 +94,7 @@ class DatabaseIntegrationSpec extends FixtureAsyncFreeSpec with Matchers with Ei
         }
       }
 
-      "should return true given the role exists and there is already a membership" in { repository =>
+      "return true given the role exists and there is already a membership" in { repository =>
 
         val teamId = UUID.fromString("b379e724-ec7f-46ae-8989-0eedabd37430")
         val userId = UUID.fromString("178d8120-9199-46ab-a61a-868668a30e23")
@@ -134,7 +114,7 @@ class DatabaseIntegrationSpec extends FixtureAsyncFreeSpec with Matchers with Ei
         }
       }
 
-      "should return error if the role does not exist" in { repository =>
+      "return error if the role does not exist" in { repository =>
 
         val teamId = UUID.fromString("d3afd082-f0b6-48a2-a7d7-00298d363c77")
         val userId = UUID.fromString("252be669-8314-41bc-9d52-95863300c5c6")
@@ -143,14 +123,14 @@ class DatabaseIntegrationSpec extends FixtureAsyncFreeSpec with Matchers with Ei
         repository
           .upsertMembershipRole(teamId, userId, roleId)
           .value
-          .map(_.left.value shouldBe "Role not found")
+          .asserting(_ shouldBe Left(Error("role.id", "not.found")))
       }
 
     }
 
-    "findMemberships" - {
+    "findMemberships" should {
 
-      "should return a list of memberships given existing role" in { repository =>
+      "return a list of memberships given existing role" in { repository =>
 
         val membership1 = Membership(
           teamId = UUID.fromString("5f6c189b-a76e-486c-b847-c8a05ed4dfd2"),

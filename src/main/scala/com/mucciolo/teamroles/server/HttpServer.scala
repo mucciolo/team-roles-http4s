@@ -18,8 +18,6 @@ import pureconfig.generic.auto._
 import pureconfig.module.catseffect.syntax._
 import pureconfig.module.http4s._
 
-import scala.concurrent.ExecutionContext
-
 object HttpServer {
 
   private object Default {
@@ -30,7 +28,7 @@ object HttpServer {
   def runForever(): IO[Nothing] = {
     for {
       config <- Resource.eval(ConfigSource.default.loadF[IO, AppConf]())
-      transactor <- Database.newTransactor(config.database, ExecutionContext.global)
+      transactor <- Database.newTransactor(config.database)
       _ <- Database.migrate(transactor)
       roleRepository = new SQLRoleRepository(transactor)
       httpClient <- EmberClientBuilder.default[IO].build

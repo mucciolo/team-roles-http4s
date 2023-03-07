@@ -7,8 +7,12 @@ import java.util.UUID
 object Domain {
 
   @JsonCodec
-  case class Role(id: UUID, name: String)
+  final case class Role(id: UUID, name: String)
 
   @JsonCodec
-  case class Membership(teamId: UUID, userId: UUID)
+  final case class Membership(teamId: UUID, userId: UUID)
+
+  @JsonCodec
+  final case class Error(field: String, message: String)
+
 }

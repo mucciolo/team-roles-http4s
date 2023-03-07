@@ -1,6 +1,5 @@
 package com.mucciolo.teamroles.routes
 
-import cats.data.Validated.{Invalid, Valid}
 import cats.effect.IO
 import cats.implicits._
 import com.mucciolo.teamroles.core.RoleService
@@ -22,13 +21,13 @@ object RoleRoutes extends Http4sDsl[IO] {
       req.decodeJson[RoleCreationRequest].flatMap { roleCreationRequest =>
         roleValidator.validate(roleCreationRequest) match {
 
-          case Invalid(errors) =>
-            BadRequest(Error(errors))
+          case Left(errors) =>
+            BadRequest(errors)
 
-          case Valid(roleCreationRequest) =>
+          case Right(roleCreationRequest) =>
             roleService
               .create(roleCreationRequest.name.get)
-              .foldF(err => BadRequest(Error(err)), role => Created(role))
+              .foldF(err => BadRequest(err), role => Created(role))
         }
       }
 
@@ -36,20 +35,20 @@ object RoleRoutes extends Http4sDsl[IO] {
       req.decodeJson[RoleAssignmentRequest].flatMap { roleAssignmentRequest =>
         assignmentValidator.validate(roleAssignmentRequest) match {
 
-          case Invalid(errors) =>
-            BadRequest(Error(errors))
+          case Left(errors) =>
+            BadRequest(errors)
 
-          case Valid(roleCreationRequest) =>
+          case Right(roleCreationRequest) =>
             roleService
               .assign(teamId, userId, roleCreationRequest.roleId.get)
-              .foldF(err => BadRequest(Error(err)), _.fold(NotFound())(_ => NoContent()))
+              .foldF(NotFound())(_.fold(err => BadRequest(err), _ => NoContent()))
         }
       }
 
     case GET -> Root / "teams" / UUIDVar(teamId) / "members" / UUIDVar(userId) / "role" =>
       roleService
         .roleLookup(teamId, userId)
-        .foldF(err => BadRequest(Error(err)), Ok(_))
+        .foldF(NotFound())(Ok(_))
 
     case GET -> Root / "roles" / UUIDVar(roleId) / "assignments" =>
       roleService

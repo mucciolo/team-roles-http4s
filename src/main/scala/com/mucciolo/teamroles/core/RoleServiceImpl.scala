@@ -5,7 +5,7 @@ import cats.effect.IO
 import cats.implicits._
 import com.mucciolo.teamroles.core.Domain._
 import com.mucciolo.teamroles.repository.{PredefRoles, RoleRepository}
-import com.mucciolo.teamroles.userteams.{Team, UserTeamsClient}
+import com.mucciolo.teamroles.userteams.UserTeamsClient
 import org.apache.commons.lang3.StringUtils._
 
 import java.util.UUID
@@ -20,39 +20,26 @@ final class RoleServiceImpl(
     normalizeSpace(roleName)
   }
 
-  override def create(roleName: String): EitherT[IO, String, Role] = {
+  override def create(roleName: String): EitherT[IO, Error, Role] = {
     val normalizedRoleName = normalizeRoleName(roleName)
     repository.insert(normalizedRoleName)
   }
 
-  private def isUserTeamMember(userId: UUID, teamId: UUID): EitherT[IO, String, Boolean] =
-    findTeamById(teamId)
+  private def isUserTeamMember(userId: UUID, teamId: UUID): OptionT[IO, Boolean] =
+    userTeamsClient
+      .findTeamById(teamId)
       .map(team => team.teamLeadId == userId || team.teamMemberIds.contains(userId))
 
-  private def findTeamById(teamId: UUID): EitherT[IO, String, Team] = {
-    userTeamsClient.findTeamById(teamId).toRight("Team not found")
+  override def assign(teamId: UUID, userId: UUID, roleId: UUID): OptionT[IO, Either[Error, Boolean]] = {
+    isUserTeamMember(userId, teamId)
+      .filter(_ == true)
+      .semiflatMap(_ => repository.upsertMembershipRole(teamId, userId, roleId).value)
   }
 
-  override def assign(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, String, Option[Boolean]] = {
-    isUserTeamMember(userId, teamId).ifM(
-      repository.upsertMembershipRole(teamId, userId, roleId).map(Some(_)),
-      EitherT.leftT("User is not a team member")
-    )
-  }
-
-  override def roleLookup(teamId: UUID, userId: UUID): EitherT[IO, String, Role] = {
-    EitherT(
-      repository
-        .findByMembership(teamId, userId)
-        .value
-        .flatMap {
-          case Some(role) => IO(Right(role))
-          case None =>
-            isUserTeamMember(userId, teamId)
-              .subflatMap(x => Either.cond(x, DefaultRole, "User is not a team member"))
-              .value
-        }
-    )
+  override def roleLookup(teamId: UUID, userId: UUID): OptionT[IO, Role] = {
+    repository
+      .findByMembership(teamId, userId)
+      .orElse(isUserTeamMember(userId, teamId).filter(_ == true).map(_ => DefaultRole))
   }
 
   private def isRoleDefined(roleId: UUID): IO[Boolean] = repository.findById(roleId).isDefined
