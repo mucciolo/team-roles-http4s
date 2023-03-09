@@ -2,7 +2,7 @@ package com.mucciolo.teamroles.core
 
 import cats.data.{EitherT, OptionT}
 import cats.effect.IO
-import com.mucciolo.teamroles.core.Domain._
+import com.mucciolo.teamroles.domain._
 
 import java.util.UUID
 

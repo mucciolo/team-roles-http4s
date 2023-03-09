@@ -1,13 +1,13 @@
 package com.mucciolo.teamroles.routes
 
-import cats.data.Validated._
 import cats.data._
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.implicits.catsSyntaxEitherId
-import com.mucciolo.teamroles.core.Domain._
+import com.mucciolo.teamroles.domain._
 import com.mucciolo.teamroles.core.RoleService
-import com.mucciolo.teamroles.util.Validator
+import io.circe.Json
+import io.circe.Json.fromString
 import org.http4s.Method.{GET, POST, PUT}
 import org.http4s.circe.CirceEntityCodec.{circeEntityDecoder, circeEntityEncoder}
 import org.http4s.implicits._
@@ -21,8 +21,9 @@ import java.util.UUID
 final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMockFactory
   with Matchers {
 
-  private val service = stub[RoleService]
-  private val defaultRoutes: HttpRoutes[IO] = RoleRoutes(service)
+  private val service = mock[RoleService]
+  private val routes: HttpRoutes[IO] = RoleRoutes(service)
+
   private val teamId = UUID.fromString("dcb537df-3ac9-40cb-adcb-b15f652f18f7")
   private val userId = UUID.fromString("3a05f9ce-3873-4de4-a8ce-6a15e84158cc")
   private val roleId = UUID.fromString("ff80826c-41de-4462-92cf-5967d0f3324f")
@@ -31,7 +32,7 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
     routes.orNotFound(request)
   }
 
-  private def roleCreationRequest(role: RoleCreationRequest) = {
+  private def roleCreationRequest(role: Json) = {
     Request[IO](POST, uri"/teams/roles").withEntity(role)
   }
 
@@ -40,16 +41,18 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
       "return 201 with newly created object" in {
 
         val roleName = "New Role"
-        val role = RoleCreationRequest(Some(roleName))
+        val role: Json = Json.obj(
+          "name" -> fromString(roleName)
+        )
         val expectedCreatedRole = Role(
           id = UUID.fromString("b93558f5-0ac8-47f8-8cf0-7b131364d464"),
           name = roleName
         )
 
-        service.create _ when roleName returns EitherT.rightT(expectedCreatedRole)
+        service.create _ expects roleName returns EitherT.rightT(expectedCreatedRole)
 
         val request = roleCreationRequest(role)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
         response.flatMap { res =>
           res.status shouldBe Status.Created
@@ -60,43 +63,49 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
 
     "given invalid request" should {
 
-      "return 400" in {
+      "return 400 given missing role name" in {
 
-        val invalidRole = RoleCreationRequest(name = None)
-        val invalidator: Validator[RoleCreationRequest] = _ => invalidNec("Invalid role name")
-        val routes = RoleRoutes(service, invalidator)
+        val invalidRole: Json = Json.obj()
 
         val request = roleCreationRequest(invalidRole)
         val response = send(routes)(request)
-        val expectedError = ValidationError("Invalid role name")
+
+        response.asserting(_.status shouldBe Status.UnprocessableEntity)
+      }
+
+      "return 400 given null role name" in {
+
+        val invalidRole: Json = Json.obj(
+          "name" -> Json.Null
+        )
+
+        val request = roleCreationRequest(invalidRole)
+        val response = send(routes)(request)
+
+        response.asserting(_.status shouldBe Status.UnprocessableEntity)
+      }
+
+      "return 400 given role creation error" in {
+        val roleName = "New Role"
+        val role: Json = Json.obj(
+          "name" -> fromString(roleName)
+        )
+        val error = FieldError("*", "test")
+        service.create _ expects roleName returns EitherT.leftT(error)
+
+        val request = roleCreationRequest(role)
+        val response = send(routes)(request)
 
         response.flatMap { res =>
           res.status shouldBe Status.BadRequest
-          res.as[ValidationError].asserting(_ shouldBe expectedError)
-        }
-      }
-
-      "given role creation error" should {
-        "return 400" in {
-          val roleName = "New Role"
-          val role = RoleCreationRequest(Some(roleName))
-          val error = Error("*", "test")
-          service.create _ when roleName returns EitherT.leftT(error)
-
-          val request = roleCreationRequest(role)
-          val response = send(defaultRoutes)(request)
-
-          response.flatMap { res =>
-            res.status shouldBe Status.BadRequest
-            res.as[Error].asserting(_ shouldBe error)
-          }
+          res.as[FieldError].asserting(_ shouldBe error)
         }
       }
     }
 
   }
 
-  private def roleAssignmentRequest(teamId: UUID, userId: UUID, assignment: RoleAssignmentRequest) = {
+  private def roleAssignmentRequest(teamId: UUID, userId: UUID, assignment: Json) = {
     Request[IO](PUT, uri"/teams" / teamId / "members" / userId / "role").withEntity(assignment)
   }
 
@@ -105,48 +114,58 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
     "given team exists and user is a member" should {
       "return 204" in {
 
-        val assignment = RoleAssignmentRequest(Some(roleId))
-        service.assign _ when (teamId, userId, roleId) returns OptionT.some(Right(true))
-
-        val request = roleAssignmentRequest(teamId, userId, assignment)
-        val response = send(defaultRoutes)(request)
-
-        response.map { res =>
-          res.status shouldBe Status.NoContent
-        }
-      }
-    }
-
-    "given invalid request" should {
-      "return 400" in {
-        val assignment = RoleAssignmentRequest(None)
-        val invalidator: Validator[RoleAssignmentRequest] = _ => invalidNec("Missing role id")
-        val routes = RoleRoutes(service, assignmentValidator = invalidator)
+        val assignment: Json = Json.obj(
+          "roleId" -> fromString(roleId.toString)
+        )
+        service.assign _ expects (teamId, userId, roleId) returns OptionT.some(Right(true))
 
         val request = roleAssignmentRequest(teamId, userId, assignment)
         val response = send(routes)(request)
-        val expectedError = ValidationError("Missing role id")
 
-        response.flatMap { res =>
-          res.status shouldBe Status.BadRequest
-          res.as[ValidationError].asserting(_ shouldBe expectedError)
-        }
+        response.map(_.status shouldBe Status.NoContent)
       }
     }
+
+    "given missing role id" should {
+      "return 400" in {
+        val invalidAssignment: Json = Json.obj()
+
+        val request = roleAssignmentRequest(teamId, userId, invalidAssignment)
+        val response = send(routes)(request)
+
+        response.asserting(_.status shouldBe Status.UnprocessableEntity)
+      }
+    }
+
+    "given null role id" should {
+      "return 400" in {
+        val invalidAssignment: Json = Json.obj(
+          "roleId" -> Json.Null
+        )
+
+        val request = roleAssignmentRequest(teamId, userId, invalidAssignment)
+        val response = send(routes)(request)
+
+        response.asserting(_.status shouldBe Status.UnprocessableEntity)
+      }
+    }
+
 
     "given role assignment error" should {
       "return 400" in {
 
-        val assignment = RoleAssignmentRequest(Some(roleId))
-        val error = Error("*", "test")
-        service.assign _ when (teamId, userId, roleId) returns OptionT.some(Left(error))
+        val assignment: Json = Json.obj(
+          "roleId" -> fromString(roleId.toString)
+        )
+        val error = FieldError("*", "test")
+        service.assign _ expects (teamId, userId, roleId) returns OptionT.some(Left(error))
 
         val request = roleAssignmentRequest(teamId, userId, assignment)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
         response.flatMap { res =>
           res.status shouldBe Status.BadRequest
-          res.as[Error].asserting(_ shouldBe error)
+          res.as[FieldError].asserting(_ shouldBe error)
         }
 
       }
@@ -155,17 +174,15 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
     "given role does not exist" should {
       "return 404" in {
 
-        val assignment = RoleAssignmentRequest(Some(roleId))
-
-        service.assign _ when (teamId, userId, roleId) returns OptionT.none
+        val assignment: Json = Json.obj(
+          "roleId" -> fromString(roleId.toString)
+        )
+        service.assign _ expects (teamId, userId, roleId) returns OptionT.none
 
         val request = roleAssignmentRequest(teamId, userId, assignment)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
-        response.asserting { res =>
-          res.status shouldBe Status.NotFound
-        }
-
+        response.asserting(_.status shouldBe Status.NotFound)
       }
     }
 
@@ -184,10 +201,10 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
           name = "Assigned Role"
         )
 
-        service.roleLookup _ when (teamId, userId) returns OptionT.some(assignedRole)
+        service.roleLookup _ expects (teamId, userId) returns OptionT.some(assignedRole)
 
         val request = roleLookupRequest(teamId, userId)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
         response.flatMap { res =>
           res.status shouldBe Status.Ok
@@ -199,10 +216,10 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
     "membership is not found" should {
       "return 404" in {
 
-        service.roleLookup _ when (teamId, userId) returns OptionT.none
+        service.roleLookup _ expects (teamId, userId) returns OptionT.none
 
         val request = roleLookupRequest(teamId, userId)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
         response.asserting(_.status shouldBe Status.NotFound)
 
@@ -229,10 +246,10 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
           )
         )
 
-        service.membershipLookup _ when roleId returns OptionT.pure(memberships)
+        service.membershipLookup _ expects roleId returns OptionT.pure(memberships)
 
         val request = membershipLookupRequest(roleId)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
         response.flatMap { res =>
           res.status shouldBe Status.Ok
@@ -244,10 +261,10 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
     "given role does not exist" should {
       "should return 404" in {
 
-        service.membershipLookup _ when roleId returns OptionT.none
+        service.membershipLookup _ expects roleId returns OptionT.none
 
         val request = membershipLookupRequest(roleId)
-        val response = send(defaultRoutes)(request)
+        val response = send(routes)(request)
 
         response.asserting { res =>
           res.status shouldBe Status.NotFound

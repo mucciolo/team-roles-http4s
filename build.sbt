@@ -1,5 +1,5 @@
 lazy val Http4sVersion = "0.23.18"
-lazy val CirceVersion = "0.14.4"
+lazy val CirceVersion = "0.14.5"
 lazy val MunitVersion = "0.7.29"
 lazy val LogbackVersion = "1.3.5"
 lazy val MunitCatsEffectVersion = "1.0.7"

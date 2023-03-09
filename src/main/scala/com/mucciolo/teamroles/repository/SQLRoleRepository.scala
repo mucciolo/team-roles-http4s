@@ -3,7 +3,7 @@ package com.mucciolo.teamroles.repository
 import cats.data.{EitherT, OptionT}
 import cats.effect.IO
 import cats.implicits._
-import com.mucciolo.teamroles.core.Domain._
+import com.mucciolo.teamroles.domain._
 import doobie.implicits._
 import doobie.postgres.implicits._
 import doobie.util.transactor.Transactor
@@ -13,7 +13,7 @@ import scala.language.postfixOps
 
 final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository {
 
-  private val UnmappedError = Error("*", "unmapped")
+  private val UnmappedError = FieldError("*", "unmapped")
 
   override def insert(roleName: String): EitherT[IO, Error, Role] = {
     EitherT(
@@ -28,7 +28,7 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
     )
       .leftMap { error =>
         if (error.getMessage.contains(s"Key (name)=($roleName) already exists"))
-          Error("role.name", "already.exists")
+          FieldError("role.name", "already.exists")
         else
           UnmappedError
       }
@@ -47,10 +47,12 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
         .attemptSql
     ).leftMap { error =>
       if (error.getMessage.contains(s"Key (role_id)=($roleId) is not present"))
-        Error("role.id", "not.found")
+        FieldError("role.id", "not.found")
       else
         UnmappedError
-    }.map(_ != 0)
+    }
+      .map(_ != 0)
+      .leftWiden
   }
 
   override def findByMembership(teamId: UUID, userId: UUID): OptionT[IO, Role] = {

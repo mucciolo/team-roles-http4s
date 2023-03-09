@@ -2,9 +2,10 @@ package com.mucciolo.teamroles.core
 
 import cats.data.{EitherT, OptionT}
 import cats.effect.testing.scalatest.AsyncIOSpec
-import com.mucciolo.teamroles.core.Domain._
-import com.mucciolo.teamroles.repository.{PredefRoles, RoleRepository}
+import com.mucciolo.teamroles.domain._
+import com.mucciolo.teamroles.repository.RoleRepository
 import com.mucciolo.teamroles.userteams.{Team, UserTeamsClient}
+import org.apache.commons.lang3.StringUtils.repeat
 import org.scalamock.scalatest.AsyncMockFactory
 import org.scalatest.EitherValues
 import org.scalatest.matchers.should.Matchers
@@ -17,7 +18,7 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
 
   private val teamId = UUID.fromString("5bd70a66-f6a0-42fc-8bdb-6c40841fab62")
   private val userId = UUID.fromString("ef2d1c0b-7ddb-446d-80d4-77301cbd4ffa")
-  private val role = PredefRoles.developer
+  private val role = Role.Predef.developer
 
   private val repository = mock[RoleRepository]
   private val userTeamsClient = mock[UserTeamsClient]
@@ -26,9 +27,9 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
   "RoleServiceImpl" when {
 
     "create" should {
-      "normalize role name spaces" in {
+      "normalize valid role names spaces" in {
 
-        val roleName = " Role  Name   "
+        val roleName = " Role   Name"
         val normalizedRoleName = "Role Name"
         val normalizedRole = Role(
           id = UUID.fromString("79446410-73ad-4122-8110-0904974c2738"),
@@ -40,6 +41,27 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
         service.create(roleName)
           .value
           .asserting(_.value shouldBe normalizedRole)
+      }
+
+      "invalidate blank name" in {
+        val roleName = "   "
+        service.create(roleName)
+          .value
+          .asserting(_.left.value shouldBe a[ValidationError])
+      }
+
+      "invalidate names longer that 100 characters" in {
+        val roleName = repeat("x", 101)
+        service.create(roleName)
+          .value
+          .asserting(_.left.value shouldBe a[ValidationError])
+      }
+
+      "invalidate non-letter characters" in {
+        val roleName = "Role N4me"
+        service.create(roleName)
+          .value
+          .asserting(_.left.value shouldBe a[ValidationError])
       }
     }
 
@@ -58,7 +80,7 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
           )
         )
 
-        val error = Error("*", "test")
+        val error = FieldError("*", "test")
 
         repository.upsertMembershipRole _ expects (teamId, userId, role.id) returns EitherT.leftT(error)
         userTeamsClient.findTeamById _ expects teamId returns OptionT.some(team)
@@ -195,7 +217,7 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
 
         service.roleLookup(teamId, userId)
           .value
-          .asserting(_ shouldBe Some(PredefRoles.developer))
+          .asserting(_ shouldBe Some(Role.Predef.developer))
 
       }
 

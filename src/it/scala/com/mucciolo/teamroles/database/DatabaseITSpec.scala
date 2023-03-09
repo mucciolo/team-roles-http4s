@@ -6,8 +6,8 @@ import cats.effect.testing.scalatest.{AsyncIOSpec, CatsResourceIO}
 import cats.implicits._
 import com.dimafeng.testcontainers.DockerComposeContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
-import com.mucciolo.teamroles.core.Domain._
-import com.mucciolo.teamroles.repository.{PredefRoles, SQLRoleRepository}
+import com.mucciolo.teamroles.domain._
+import com.mucciolo.teamroles.repository.SQLRoleRepository
 import com.mucciolo.teamroles.util.Database
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.FixtureAsyncWordSpec
@@ -31,23 +31,23 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
     "migrated" should {
       "have developer role predefined" in { repository =>
         repository
-          .findById(PredefRoles.developer.id)
+          .findById(Role.Predef.developer.id)
           .value
-          .asserting(_.value shouldBe PredefRoles.developer)
+          .asserting(_.value shouldBe Role.Predef.developer)
       }
 
       "have product owner role predefined" in { repository =>
         repository
-          .findById(PredefRoles.productOwner.id)
+          .findById(Role.Predef.productOwner.id)
           .value
-          .asserting(_.value shouldBe PredefRoles.productOwner)
+          .asserting(_.value shouldBe Role.Predef.productOwner)
       }
 
       "have tester role predefined" in { repository =>
         repository
-          .findById(PredefRoles.tester.id)
+          .findById(Role.Predef.tester.id)
           .value
-          .asserting(_.value shouldBe PredefRoles.tester)
+          .asserting(_.value shouldBe Role.Predef.tester)
       }
     }
 
@@ -66,12 +66,12 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
       }
 
       "should return error given a existing name" in { repository =>
-        val existingName = PredefRoles.developer.name
+        val existingName = Role.Predef.developer.name
 
         repository
           .insert(existingName)
           .value
-          .asserting(_ shouldBe Left(Error("role.name", "already.exists")))
+          .asserting(_ shouldBe Left(FieldError("role.name", "already.exists")))
       }
     }
 
@@ -81,7 +81,7 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
 
         val teamId = UUID.fromString("93f3831b-c2fb-4344-a381-d83da651befc")
         val userId = UUID.fromString("4992e273-4f42-4bb6-a2b8-0f36ad4e04bc")
-        val expectedRole = PredefRoles.developer
+        val expectedRole = Role.Predef.developer
         val roleId = expectedRole.id
 
         for {
@@ -98,11 +98,11 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
 
         val teamId = UUID.fromString("b379e724-ec7f-46ae-8989-0eedabd37430")
         val userId = UUID.fromString("178d8120-9199-46ab-a61a-868668a30e23")
-        val expectedRole = PredefRoles.tester
+        val expectedRole = Role.Predef.tester
         val roleId = expectedRole.id
 
         for {
-          errorXorInserted <- repository.upsertMembershipRole(teamId, userId, PredefRoles.developer.id).value
+          errorXorInserted <- repository.upsertMembershipRole(teamId, userId, Role.Predef.developer.id).value
           hasAnyRowInserted = errorXorInserted.value
           errorXorUpdated <- repository.upsertMembershipRole(teamId, userId, roleId).value
           hasAnyRowUpdated = errorXorUpdated.value
@@ -123,7 +123,7 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
         repository
           .upsertMembershipRole(teamId, userId, roleId)
           .value
-          .asserting(_ shouldBe Left(Error("role.id", "not.found")))
+          .asserting(_ shouldBe Left(FieldError("role.id", "not.found")))
       }
 
     }
@@ -141,7 +141,7 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
           userId = UUID.fromString("e54cb315-10ad-44ee-9b66-c47a6bb2f3b1")
         )
         val expectedMemberships = List(membership1, membership2)
-        val role = PredefRoles.productOwner
+        val role = Role.Predef.productOwner
 
         repository.upsertMembershipRole(membership1.teamId, membership1.userId, role.id).value *>
           repository.upsertMembershipRole(membership2.teamId, membership2.userId, role.id).value *>
