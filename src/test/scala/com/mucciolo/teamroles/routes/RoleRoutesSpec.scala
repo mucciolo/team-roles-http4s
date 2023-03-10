@@ -117,7 +117,7 @@ final class RoleRoutesSpec extends AsyncWordSpec with AsyncIOSpec with AsyncMock
         val assignment: Json = Json.obj(
           "roleId" -> fromString(roleId.toString)
         )
-        service.assign _ expects (teamId, userId, roleId) returns OptionT.some(Right(true))
+        service.assign _ expects (teamId, userId, roleId) returns OptionT.some(Right(()))
 
         val request = roleAssignmentRequest(teamId, userId, assignment)
         val response = send(routes)(request)

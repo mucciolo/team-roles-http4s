@@ -47,7 +47,8 @@ lazy val root = (project in file("."))
       "org.scalamock"          %% "scalamock"                       % ScalaMockVersion         % "test",
       "com.github.tomakehurst" % "wiremock-jre8"                    % WireMockVersion          % "it",
       "org.typelevel"          %% "cats-effect-testing-scalatest"   % CatsEffectTestingVersion % "test, it",
-      "com.dimafeng"           %% "testcontainers-scala-scalatest"  % TestContainersVersion    % "it"
+      "com.dimafeng"           %% "testcontainers-scala-scalatest"  % TestContainersVersion    % "it",
+      "com.dimafeng"           %% "testcontainers-scala-postgresql" % TestContainersVersion    % "it"
 
     ),
     Defaults.itSettings,

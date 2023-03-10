@@ -1,75 +1,100 @@
 package com.mucciolo.teamroles.database
 
-import cats.effect.IO
-import cats.effect.kernel.Resource
-import cats.effect.testing.scalatest.{AsyncIOSpec, CatsResourceIO}
+import cats.effect.testing.scalatest.{AssertingSyntax, AsyncIOSpec}
 import cats.implicits._
-import com.dimafeng.testcontainers.DockerComposeContainer
+import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import com.mucciolo.teamroles.domain._
-import com.mucciolo.teamroles.repository.SQLRoleRepository
+import com.mucciolo.teamroles.repository.{RoleRepository, SQLRoleRepository}
 import com.mucciolo.teamroles.util.Database
+import com.mucciolo.teamroles.util.Database.DataSourceTransactor
+import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+import doobie.implicits._
+import doobie.postgres.implicits._
 import org.scalatest.matchers.should.Matchers
-import org.scalatest.wordspec.FixtureAsyncWordSpec
-import org.scalatest.{EitherValues, OptionValues}
+import org.scalatest.wordspec.AsyncWordSpec
+import org.scalatest.{BeforeAndAfterEach, EitherValues, OptionValues}
+import org.testcontainers.utility.DockerImageName
 
 import java.util.UUID
 
-class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValues
-  with OptionValues with AsyncIOSpec with CatsResourceIO[SQLRoleRepository]
-  with TestContainerForAll {
+class DatabaseITSpec extends AsyncWordSpec with Matchers with EitherValues with AsyncIOSpec
+  with OptionValues with AssertingSyntax with TestContainerForAll with BeforeAndAfterEach {
 
-  override val containerDef: DockerComposeContainer.Def = PostgresContainer.Def
+  override val containerDef: PostgreSQLContainer.Def = PostgreSQLContainer.Def(
+    DockerImageName.parse("postgres:15.2-alpine")
+  )
 
-  override val resource: Resource[IO, SQLRoleRepository] = for {
-    transactor <- Database.newTransactor(PostgresContainer.Conf)
-    _ <- Database.migrate(transactor)
-  } yield new SQLRoleRepository(transactor)
+  private var transactor: DataSourceTransactor = _
+  private var repository: RoleRepository = _
 
+  override def afterContainersStart(container: PostgreSQLContainer): Unit = {
+    val hikariConfig = new HikariConfig()
+    hikariConfig.setJdbcUrl(container.jdbcUrl)
+    hikariConfig.setUsername(container.username)
+    hikariConfig.setPassword(container.password)
+
+    val dataSource = new HikariDataSource(hikariConfig)
+    transactor = Database.newTransactor(dataSource)
+    repository = new SQLRoleRepository(transactor)
+
+    Database.migrate(dataSource)
+  }
+
+  override protected def beforeEach(): Unit = {
+    val clearRoleAssignments = sql"DELETE FROM team_member_role".update.run
+    val clearRoles =
+      sql"""
+         DELETE FROM roles
+         WHERE id NOT IN (
+           ${Role.Predef.Developer.id}, ${Role.Predef.Tester.id}, ${Role.Predef.ProductOwner.id}
+         )
+         """.update.run
+
+    (clearRoleAssignments, clearRoles).mapN(_ + _).transact(transactor).unsafeRunSync()
+  }
 
   "Database" when {
     "migrated" should {
-      "have developer role predefined" in { repository =>
+      "have developer role predefined" in {
         repository
-          .findById(Role.Predef.developer.id)
+          .findById(Role.Predef.Developer.id)
           .value
-          .asserting(_.value shouldBe Role.Predef.developer)
+          .asserting(_.value shouldBe Role.Predef.Developer)
       }
 
-      "have product owner role predefined" in { repository =>
+      "have product owner role predefined" in {
         repository
-          .findById(Role.Predef.productOwner.id)
+          .findById(Role.Predef.ProductOwner.id)
           .value
-          .asserting(_.value shouldBe Role.Predef.productOwner)
+          .asserting(_.value shouldBe Role.Predef.ProductOwner)
       }
 
-      "have tester role predefined" in { repository =>
+      "have tester role predefined" in {
         repository
-          .findById(Role.Predef.tester.id)
+          .findById(Role.Predef.Tester.id)
           .value
-          .asserting(_.value shouldBe Role.Predef.tester)
+          .asserting(_.value shouldBe Role.Predef.Tester)
       }
     }
 
   }
 
   "SQLRoleRepository" when {
-
     "insert" should {
-      "return inserted role given a unique name" in { repository =>
+      "return inserted role given a unique name" in {
         for {
-          errorXorRole <- repository.insert("New Role").value
+          errorXorRole <- repository.insert("Unique Name").value
           insertedRole = errorXorRole.value
-          maybeInsertedRoleByName <- repository.findById(insertedRole.id).value
-          insertedRoleByName = maybeInsertedRoleByName.value
-        } yield insertedRole shouldBe insertedRoleByName
+          maybeFetchedRole <- repository.findById(insertedRole.id).value
+          fetchedRole = maybeFetchedRole.value
+        } yield insertedRole shouldBe fetchedRole
       }
 
-      "should return error given a existing name" in { repository =>
-        val existingName = Role.Predef.developer.name
+      "return error given a existing name" in {
+        val existingName = "Duplicate Name"
 
-        repository
-          .insert(existingName)
+        (repository.insert(existingName) *> repository.insert(existingName))
           .value
           .asserting(_ shouldBe Left(FieldError("role.name", "already.exists")))
       }
@@ -77,48 +102,44 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
 
     "upsertMembershipRole" should {
 
-      "return true given the role exists and there is no membership" in { repository =>
+      "assign the role to membership" in {
 
-        val teamId = UUID.fromString("93f3831b-c2fb-4344-a381-d83da651befc")
-        val userId = UUID.fromString("4992e273-4f42-4bb6-a2b8-0f36ad4e04bc")
-        val expectedRole = Role.Predef.developer
-        val roleId = expectedRole.id
+        val teamId = UUID.randomUUID()
+        val userId = UUID.randomUUID()
 
         for {
-          errorXorInserted <- repository.upsertMembershipRole(teamId, userId, roleId).value
-          hasAnyRowInserted = errorXorInserted.value
+          errXorRole <- repository.insert("Role").value
+          role = errXorRole.value
+          _ <- repository.upsertMembershipRole(teamId, userId, role.id).value
           insertedRole <- repository.findByMembership(teamId, userId).value
         } yield {
-          hasAnyRowInserted shouldBe true
-          insertedRole.value shouldBe expectedRole
+          insertedRole.value shouldBe role
         }
       }
 
-      "return true given the role exists and there is already a membership" in { repository =>
+      "update the role assigned to membership" in {
 
-        val teamId = UUID.fromString("b379e724-ec7f-46ae-8989-0eedabd37430")
-        val userId = UUID.fromString("178d8120-9199-46ab-a61a-868668a30e23")
-        val expectedRole = Role.Predef.tester
-        val roleId = expectedRole.id
+        val teamId = UUID.randomUUID()
+        val userId = UUID.randomUUID()
 
         for {
-          errorXorInserted <- repository.upsertMembershipRole(teamId, userId, Role.Predef.developer.id).value
-          hasAnyRowInserted = errorXorInserted.value
-          errorXorUpdated <- repository.upsertMembershipRole(teamId, userId, roleId).value
-          hasAnyRowUpdated = errorXorUpdated.value
+          errXorFirstRole <- repository.insert("First").value
+          firstRole = errXorFirstRole.value
+          _ <- repository.upsertMembershipRole(teamId, userId, firstRole.id).value
+          errXorSecondRole <- repository.insert("Second").value
+          secondRole = errXorSecondRole.value
+          _ <- repository.upsertMembershipRole(teamId, userId, secondRole.id).value
           updatedRole <- repository.findByMembership(teamId, userId).value
         } yield {
-          hasAnyRowInserted shouldBe true
-          hasAnyRowUpdated shouldBe true
-          updatedRole.value shouldBe expectedRole
+          updatedRole.value shouldBe secondRole
         }
       }
 
-      "return error if the role does not exist" in { repository =>
+      "return error if the role does not exist" in {
 
-        val teamId = UUID.fromString("d3afd082-f0b6-48a2-a7d7-00298d363c77")
-        val userId = UUID.fromString("252be669-8314-41bc-9d52-95863300c5c6")
-        val roleId = UUID.fromString("6580a126-1fe8-4e3c-9d9b-3417902bcadc")
+        val teamId = UUID.randomUUID()
+        val userId = UUID.randomUUID()
+        val roleId = UUID.randomUUID()
 
         repository
           .upsertMembershipRole(teamId, userId, roleId)
@@ -129,27 +150,27 @@ class DatabaseITSpec extends FixtureAsyncWordSpec with Matchers with EitherValue
     }
 
     "findMemberships" should {
-
-      "return a list of memberships given existing role" in { repository =>
+      "return a list of memberships given existing role" in {
 
         val membership1 = Membership(
-          teamId = UUID.fromString("5f6c189b-a76e-486c-b847-c8a05ed4dfd2"),
-          userId = UUID.fromString("85b2595a-045f-4a10-95e3-3ba633cff2c1")
+          teamId = UUID.randomUUID(),
+          userId = UUID.randomUUID()
         )
         val membership2 = Membership(
-          teamId = UUID.fromString("c71226b2-1a3e-4c1c-9461-b1363f2a10ed"),
-          userId = UUID.fromString("e54cb315-10ad-44ee-9b66-c47a6bb2f3b1")
+          teamId = UUID.randomUUID(),
+          userId = UUID.randomUUID()
         )
         val expectedMemberships = List(membership1, membership2)
-        val role = Role.Predef.productOwner
 
-        repository.upsertMembershipRole(membership1.teamId, membership1.userId, role.id).value *>
-          repository.upsertMembershipRole(membership2.teamId, membership2.userId, role.id).value *>
-          repository.findMemberships(role.id).asserting(_ shouldBe expectedMemberships)
-
+        for {
+          errXorRole <- repository.insert("Role").value
+          role = errXorRole.value
+          _ <- repository.upsertMembershipRole(membership1.teamId, membership1.userId, role.id).value
+          _ <- repository.upsertMembershipRole(membership2.teamId, membership2.userId, role.id).value
+          memberships <- repository.findMemberships(role.id)
+        } yield memberships shouldBe expectedMemberships
       }
-
     }
-
   }
+
 }

@@ -19,17 +19,17 @@ package object domain {
   final case class Role(id: UUID, name: RoleName)
   object Role {
     object Predef {
-      val developer: Role = Role(
+      val Developer: Role = Role(
         id = UUID.fromString("328fa001-14f5-401e-877c-c80109c46417"),
         name = "Developer"
       )
 
-      val productOwner: Role = Role(
+      val ProductOwner: Role = Role(
         id = UUID.fromString("4b8e1517-76b8-411b-bb08-7b747b42f895"),
         name = "Product Owner"
       )
 
-      val tester: Role = Role(
+      val Tester: Role = Role(
         id = UUID.fromString("58b229a1-7c9b-4393-bae0-096af42e85c7"),
         name = "Tester"
       )

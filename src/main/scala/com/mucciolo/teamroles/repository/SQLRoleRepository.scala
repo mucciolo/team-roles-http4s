@@ -34,7 +34,7 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
       }
   }
 
-  override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, Error, Boolean] = {
+  override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, Error, Unit] = {
     EitherT(
       sql"""
             INSERT INTO team_member_role
@@ -44,6 +44,7 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
         .update
         .run
         .transact(transactor)
+        .map(_ => ())
         .attemptSql
     ).leftMap { error =>
       if (error.getMessage.contains(s"Key (role_id)=($roleId) is not present"))
@@ -51,8 +52,6 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
       else
         UnmappedError
     }
-      .map(_ != 0)
-      .leftWiden
   }
 
   override def findByMembership(teamId: UUID, userId: UUID): OptionT[IO, Role] = {

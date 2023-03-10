@@ -15,7 +15,7 @@ final class RoleServiceImpl(
   repository: RoleRepository, userTeamsClient: UserTeamsClient
 ) extends RoleService {
 
-  private val DefaultRole: Role = Role.Predef.developer
+  private val DefaultRole: Role = Role.Predef.Developer
 
   private def normalizeRoleName(roleName: RoleName): RoleName = {
     normalizeSpace(roleName)
@@ -32,7 +32,7 @@ final class RoleServiceImpl(
       .findTeamById(teamId)
       .map(team => team.teamLeadId == userId || team.teamMemberIds.contains(userId))
 
-  override def assign(teamId: UUID, userId: UUID, roleId: UUID): OptionT[IO, Either[Error, Boolean]] = {
+  override def assign(teamId: UUID, userId: UUID, roleId: UUID): OptionT[IO, Either[Error, Unit]] = {
     isUserTeamMember(userId, teamId)
       .filter(_ == true)
       .semiflatMap(_ => repository.upsertMembershipRole(teamId, userId, roleId).value)

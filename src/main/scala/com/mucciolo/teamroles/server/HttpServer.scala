@@ -8,11 +8,11 @@ import com.mucciolo.teamroles.repository.SQLRoleRepository
 import com.mucciolo.teamroles.routes.RoleRoutes
 import com.mucciolo.teamroles.userteams.HttpUserTeamsClient
 import com.mucciolo.teamroles.util.Database
-import org.http4s.HttpRoutes
+import org.http4s.{HttpApp, HttpRoutes}
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
-import org.http4s.server.middleware.Logger
+import org.http4s.server.middleware.{CORS, Logger}
 import pureconfig._
 import pureconfig.generic.auto._
 import pureconfig.module.catseffect.syntax._
@@ -28,8 +28,8 @@ object HttpServer {
   def runForever(): IO[Nothing] = {
     for {
       config <- Resource.eval(ConfigSource.default.loadF[IO, AppConf]())
-      transactor <- Database.newTransactor(config.database)
-      _ <- Database.migrate(transactor)
+      transactor <- Database.newTransactorResource(config.database)
+      _ <- Database.newMigrationResource(transactor)
       roleRepository = new SQLRoleRepository(transactor)
       httpClient <- EmberClientBuilder.default[IO].build
       userTeamsClient = new HttpUserTeamsClient(httpClient, config.userTeamsClient)
@@ -41,9 +41,9 @@ object HttpServer {
 
   private def buildEmberServer(config: ServerConf, routes: HttpRoutes[IO]): Resource[IO, Server] = {
 
-    val httpApp = Logger.httpApp(
-      logHeaders = config.logHeaders, logBody = config.logBody
-    )(routes.orNotFound)
+    val httpApp: HttpApp[IO] = CORS.policy.apply(
+      Logger.httpApp(logHeaders = config.logHeaders, logBody = config.logBody)(routes.orNotFound)
+    )
 
     EmberServerBuilder.default[IO]
       .withHost(Host.fromString(config.host).getOrElse(Default.host))

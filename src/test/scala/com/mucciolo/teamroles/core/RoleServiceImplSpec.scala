@@ -18,7 +18,7 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
 
   private val teamId = UUID.fromString("5bd70a66-f6a0-42fc-8bdb-6c40841fab62")
   private val userId = UUID.fromString("ef2d1c0b-7ddb-446d-80d4-77301cbd4ffa")
-  private val role = Role.Predef.developer
+  private val role = Role.Predef.Developer
 
   private val repository = mock[RoleRepository]
   private val userTeamsClient = mock[UserTeamsClient]
@@ -133,12 +133,12 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
           )
         )
 
-        repository.upsertMembershipRole _ expects (teamId, userId, role.id) returns EitherT.rightT(true)
+        repository.upsertMembershipRole _ expects (teamId, userId, role.id) returns EitherT.rightT(())
         userTeamsClient.findTeamById _ expects teamId returns OptionT.some(team)
 
         service.assign(teamId, userId, role.id)
           .value
-          .asserting(_ shouldBe Some(Right(true)))
+          .asserting(_ shouldBe Some(Right(())))
 
       }
 
@@ -155,12 +155,12 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
           )
         )
 
-        repository.upsertMembershipRole _ expects (teamId, userId, role.id) returns EitherT.rightT(true)
+        repository.upsertMembershipRole _ expects (teamId, userId, role.id) returns EitherT.rightT(())
         userTeamsClient.findTeamById _ expects teamId returns OptionT.some(team)
 
         service.assign(teamId, userId, role.id)
           .value
-          .asserting(_ shouldBe Some(Right(true)))
+          .asserting(_ shouldBe Some(Right(())))
 
       }
 
@@ -217,7 +217,7 @@ final class RoleServiceImplSpec extends AsyncWordSpec with AsyncIOSpec
 
         service.roleLookup(teamId, userId)
           .value
-          .asserting(_ shouldBe Some(Role.Predef.developer))
+          .asserting(_ shouldBe Some(Role.Predef.Developer))
 
       }
 

@@ -9,7 +9,7 @@ import java.util.UUID
 trait RoleRepository {
   def insert(roleName: String): EitherT[IO, Error, Role]
   def findById(roleId: UUID): OptionT[IO, Role]
-  def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, Error, Boolean]
+  def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, Error, Unit]
   def findByMembership(teamId: UUID, userId: UUID): OptionT[IO, Role]
   def findMemberships(roleId: UUID): IO[List[Membership]]
 }
