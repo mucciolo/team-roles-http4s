@@ -11,9 +11,7 @@ import doobie.util.transactor.Transactor
 import java.util.UUID
 import scala.language.postfixOps
 
-final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository {
-
-  private val UnmappedError = FieldError("*", "unmapped")
+final class PostgresRoleRepository(transactor: Transactor[IO]) extends RoleRepository {
 
   override def insert(roleName: String): EitherT[IO, Error, Role] = {
     EitherT(
@@ -24,14 +22,9 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
         .update
         .withUniqueGeneratedKeys[Role]("id", "name")
         .transact(transactor)
-        .attemptSql
+        .map(_.asRight[Error])
+        .onUniqueViolation(FieldError("role.name", "already.exists").asLeft.pure[IO])
     )
-      .leftMap { error =>
-        if (error.getMessage.contains(s"Key (name)=($roleName) already exists"))
-          FieldError("role.name", "already.exists")
-        else
-          UnmappedError
-      }
   }
 
   override def upsertMembershipRole(teamId: UUID, userId: UUID, roleId: UUID): EitherT[IO, Error, Unit] = {
@@ -44,14 +37,9 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
         .update
         .run
         .transact(transactor)
-        .map(_ => ())
-        .attemptSql
-    ).leftMap { error =>
-      if (error.getMessage.contains(s"Key (role_id)=($roleId) is not present"))
-        FieldError("role.id", "not.found")
-      else
-        UnmappedError
-    }
+        .map(_ => ().asRight[Error])
+        .onForeignKeyViolation(FieldError("role.id", "not.found").asLeft.pure[IO])
+    )
   }
 
   override def findByMembership(teamId: UUID, userId: UUID): OptionT[IO, Role] = {
@@ -78,8 +66,6 @@ final class SQLRoleRepository(transactor: Transactor[IO]) extends RoleRepository
       .query[Membership]
       .to[List]
       .transact(transactor)
-      .attempt
-      .map(_.valueOr(_ => List.empty))
   }
 
   override def findById(roleId: UUID): OptionT[IO, Role] = {

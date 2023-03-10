@@ -4,8 +4,8 @@ import cats.data._
 import cats.effect.IO
 import cats.effect.testing.scalatest.AsyncIOSpec
 import cats.implicits.catsSyntaxEitherId
-import com.mucciolo.teamroles.domain._
 import com.mucciolo.teamroles.core.RoleService
+import com.mucciolo.teamroles.domain._
 import io.circe.Json
 import io.circe.Json.fromString
 import org.http4s.Method.{GET, POST, PUT}

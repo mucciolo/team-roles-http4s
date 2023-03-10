@@ -1,11 +1,10 @@
-package com.mucciolo.teamroles.database
+package com.mucciolo.teamroles.repository
 
 import cats.effect.testing.scalatest.{AssertingSyntax, AsyncIOSpec}
 import cats.implicits._
 import com.dimafeng.testcontainers.PostgreSQLContainer
 import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import com.mucciolo.teamroles.domain._
-import com.mucciolo.teamroles.repository.{RoleRepository, SQLRoleRepository}
 import com.mucciolo.teamroles.util.Database
 import com.mucciolo.teamroles.util.Database.DataSourceTransactor
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
@@ -33,10 +32,10 @@ class DatabaseITSpec extends AsyncWordSpec with Matchers with EitherValues with 
     hikariConfig.setJdbcUrl(container.jdbcUrl)
     hikariConfig.setUsername(container.username)
     hikariConfig.setPassword(container.password)
-
     val dataSource = new HikariDataSource(hikariConfig)
+
     transactor = Database.newTransactor(dataSource)
-    repository = new SQLRoleRepository(transactor)
+    repository = new PostgresRoleRepository(transactor)
 
     Database.migrate(dataSource)
   }
@@ -80,7 +79,7 @@ class DatabaseITSpec extends AsyncWordSpec with Matchers with EitherValues with 
 
   }
 
-  "SQLRoleRepository" when {
+  "PostgresRoleRepository" when {
     "insert" should {
       "return inserted role given a unique name" in {
         for {
@@ -150,6 +149,15 @@ class DatabaseITSpec extends AsyncWordSpec with Matchers with EitherValues with 
     }
 
     "findMemberships" should {
+
+      "return a empty list when there is no membership associated to role" in {
+        for {
+          errXorRole <- repository.insert("Role").value
+          role = errXorRole.value
+          memberships <- repository.findMemberships(role.id)
+        } yield memberships shouldBe List.empty
+      }
+
       "return a list of memberships given existing role" in {
 
         val membership1 = Membership(

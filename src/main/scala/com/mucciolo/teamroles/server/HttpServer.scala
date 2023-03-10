@@ -4,15 +4,15 @@ import cats.effect.{IO, Resource}
 import com.comcast.ip4s.{Host, IpLiteralSyntax, Port}
 import com.mucciolo.teamroles.config.{AppConf, ServerConf}
 import com.mucciolo.teamroles.core.RoleServiceImpl
-import com.mucciolo.teamroles.repository.SQLRoleRepository
+import com.mucciolo.teamroles.repository.PostgresRoleRepository
 import com.mucciolo.teamroles.routes.RoleRoutes
 import com.mucciolo.teamroles.userteams.HttpUserTeamsClient
 import com.mucciolo.teamroles.util.Database
-import org.http4s.{HttpApp, HttpRoutes}
 import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.server.Server
 import org.http4s.server.middleware.{CORS, Logger}
+import org.http4s.{HttpApp, HttpRoutes}
 import pureconfig._
 import pureconfig.generic.auto._
 import pureconfig.module.catseffect.syntax._
@@ -30,7 +30,7 @@ object HttpServer {
       config <- Resource.eval(ConfigSource.default.loadF[IO, AppConf]())
       transactor <- Database.newTransactorResource(config.database)
       _ <- Database.newMigrationResource(transactor)
-      roleRepository = new SQLRoleRepository(transactor)
+      roleRepository = new PostgresRoleRepository(transactor)
       httpClient <- EmberClientBuilder.default[IO].build
       userTeamsClient = new HttpUserTeamsClient(httpClient, config.userTeamsClient)
       roleService = new RoleServiceImpl(roleRepository, userTeamsClient)
