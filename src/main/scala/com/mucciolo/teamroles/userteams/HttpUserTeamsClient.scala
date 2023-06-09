@@ -2,7 +2,6 @@ package com.mucciolo.teamroles.userteams
 
 import cats.data.OptionT
 import cats.effect.IO
-import cats.implicits._
 import com.mucciolo.teamroles.config.UserTeamsClientConf
 import org.http4s.client.Client
 import org.http4s.{EntityDecoder, circe}

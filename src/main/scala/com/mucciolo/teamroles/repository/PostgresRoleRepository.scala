@@ -9,7 +9,6 @@ import doobie.postgres.implicits._
 import doobie.util.transactor.Transactor
 
 import java.util.UUID
-import scala.language.postfixOps
 
 final class PostgresRoleRepository(transactor: Transactor[IO]) extends RoleRepository {
 

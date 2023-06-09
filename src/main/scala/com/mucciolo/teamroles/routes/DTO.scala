@@ -1,6 +1,5 @@
 package com.mucciolo.teamroles.routes
 
-import cats.implicits._
 import io.circe.generic.JsonCodec
 
 import java.util.UUID

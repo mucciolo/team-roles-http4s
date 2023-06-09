@@ -1,7 +1,6 @@
 package com.mucciolo.teamroles.routes
 
 import cats.effect.IO
-import cats.implicits._
 import com.mucciolo.teamroles.core.RoleService
 import org.http4s.HttpRoutes
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
