@@ -8,11 +8,11 @@ services:
     volumes:
       - postgres:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "5432:5432"
     environment:
-      POSTGRES_USER: team-roles
-      POSTGRES_PASSWORD: p455w0rd
-      POSTGRES_DB: team-roles
+      POSTGRES_USER: team-roles-http4s
+      POSTGRES_PASSWORD: letmein
+      POSTGRES_DB: team-roles-http4s
 
 volumes:
   postgres:
