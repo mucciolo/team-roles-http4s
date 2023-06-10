@@ -1,46 +1,18 @@
 package com.mucciolo.teamroles.repository
 
-import cats.effect.testing.scalatest.{AssertingSyntax, AsyncIOSpec}
 import cats.implicits._
-import com.dimafeng.testcontainers.PostgreSQLContainer
-import com.dimafeng.testcontainers.scalatest.TestContainerForAll
 import com.mucciolo.teamroles.domain._
-import com.mucciolo.teamroles.util.Database
 import com.mucciolo.teamroles.util.Database.DataSourceTransactor
-import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import doobie.implicits._
 import doobie.postgres.implicits._
-import org.scalatest.matchers.should.Matchers
-import org.scalatest.wordspec.AsyncWordSpec
-import org.scalatest.{BeforeAndAfterEach, EitherValues, OptionValues}
-import org.testcontainers.utility.DockerImageName
 
 import java.util.UUID
 
-class DatabaseITSpec extends AsyncWordSpec with Matchers with EitherValues with AsyncIOSpec
-  with OptionValues with AssertingSyntax with TestContainerForAll with BeforeAndAfterEach {
+final class DatabaseIntegrationSpec extends PostgresIntegrationSpec {
 
-  override val containerDef: PostgreSQLContainer.Def = PostgreSQLContainer.Def(
-    DockerImageName.parse("postgres:15.2-alpine")
-  )
+  private lazy val repository: RoleRepository = new PostgresRoleRepository(transactor)
 
-  private var transactor: DataSourceTransactor = _
-  private var repository: RoleRepository = _
-
-  override def afterContainersStart(container: PostgreSQLContainer): Unit = {
-    val hikariConfig = new HikariConfig()
-    hikariConfig.setJdbcUrl(container.jdbcUrl)
-    hikariConfig.setUsername(container.username)
-    hikariConfig.setPassword(container.password)
-    val dataSource = new HikariDataSource(hikariConfig)
-
-    transactor = Database.newTransactor(dataSource)
-    repository = new PostgresRoleRepository(transactor)
-
-    Database.migrate(dataSource)
-  }
-
-  override protected def beforeEach(): Unit = {
+  override protected def clearDatabase(transactor: DataSourceTransactor): Unit = {
     val clearRoleAssignments = sql"DELETE FROM team_member_role".update.run
     val clearRoles =
       sql"""
@@ -50,7 +22,7 @@ class DatabaseITSpec extends AsyncWordSpec with Matchers with EitherValues with 
          )
          """.update.run
 
-    (clearRoleAssignments, clearRoles).mapN(_ + _).transact(transactor).unsafeRunSync()
+    (clearRoleAssignments, clearRoles).mapN(_ + _).transact(transactor).void.unsafeRunSync()
   }
 
   "Database" when {

@@ -1,41 +1,22 @@
 package com.mucciolo.teamroles.client
 
-import cats.effect.testing.scalatest.{AsyncIOSpec, CatsResourceIO}
-import cats.effect.{IO, Resource}
-import com.github.tomakehurst.wiremock.WireMockServer
+import cats.effect.IO
 import com.github.tomakehurst.wiremock.client.WireMock._
 import com.mucciolo.teamroles.config.UserTeamsClientConf
 import com.mucciolo.teamroles.userteams.{HttpUserTeamsClient, Team}
 import io.circe.syntax.EncoderOps
 import org.http4s.Uri
-import org.http4s.ember.client.EmberClientBuilder
-import org.scalatest.BeforeAndAfterAll
-import org.scalatest.freespec.FixtureAsyncFreeSpec
-import org.scalatest.matchers.should.Matchers
+import org.http4s.client.Client
 
 import java.util.UUID
 
-final class HttpUserTeamsClientSpec extends FixtureAsyncFreeSpec with Matchers with BeforeAndAfterAll
-  with AsyncIOSpec with CatsResourceIO[HttpUserTeamsClient] {
+final class HttpUserTeamsClientSpec extends HttpClientIntegrationTest[HttpUserTeamsClient] {
 
-  private val wireMockServer = new WireMockServer(8089)
-  override val resource: Resource[IO, HttpUserTeamsClient] =
-    EmberClientBuilder
-      .default[IO]
-      .build
-      .map { httpClient =>
-        val conf = UserTeamsClientConf(origin = Uri.unsafeFromString(wireMockServer.baseUrl()))
-        new HttpUserTeamsClient(httpClient, conf)
-      }
-
-  override def beforeAll(): Unit = {
-    super.beforeAll()
-    wireMockServer.start()
-  }
-
-  override def afterAll(): Unit = {
-    super.afterAll()
-    wireMockServer.stop()
+  override protected def createClient(
+    wireMockServerBaseUrl: String, httpClient: Client[IO]
+  ): HttpUserTeamsClient = {
+    val conf = UserTeamsClientConf(origin = Uri.unsafeFromString(wireMockServerBaseUrl))
+    new HttpUserTeamsClient(httpClient, conf)
   }
 
   "HttpUserTeamsClient" - {
@@ -82,5 +63,4 @@ final class HttpUserTeamsClientSpec extends FixtureAsyncFreeSpec with Matchers w
 
     }
   }
-
 }
